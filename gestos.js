@@ -13,10 +13,11 @@ export const GRUPOS = [['paradaNormal', 'paradaEmergencia'], ['retirarCalzas', '
 const grupo = id => GRUPOS.find(g => g.includes(id)) || [id];
 // Tolerancia (Iván probó en Quest, 8/10: «ser menos estrictos»): umbral amplio, menos peso a la inclinación de la paleta y
 // menos tiempo sostenido. Cuando hay una seña esperada, alcanza con parecerse a ésa (no hace falta que sea la mejor de todas).
-const UMBRAL = 0.9;           // radianes promedio (brazo + paleta, dos manos)
-const UMBRAL_ESPERADA = 1.25;   // (2.ª prueba en Quest: «menos estrictos»)
-const SOSTENER = 0.45;        // segundos acumulados de coincidencia
-const MOVIMIENTO = 0.06;      // metros que tienen que recorrer las puntas en las señas con movimiento
+const UMBRAL = 0.75;          // radianes promedio (brazo + paleta, dos manos)
+const UMBRAL_ESPERADA = 0.8;    // (3.ª prueba en Quest: con 1,25 «quedaron muy fáciles»)
+const MARGEN = 0.12;            // la esperada tiene que estar entre las que mejor coinciden (no sirve cualquier movimiento)
+const SOSTENER = 0.7;         // segundos acumulados de coincidencia
+const MOVIMIENTO = 0.15;      // metros que tienen que recorrer las puntas en las señas con movimiento
 
 // muestras de cada seña: [{ d: [c, p], i: [c, p] }]
 const MUESTRAS = {};
@@ -27,7 +28,8 @@ for (const [id, s] of Object.entries(SENAS)) {
     for (const k of ['d', 'i']) { const [b, a, pal] = p[k]; m[k] = [b.clone().multiplyScalar(L_BRAZO).addScaledVector(a, L_ANTE).normalize(), pal.clone()]; }
     arr.push(m);
   }
-  MUESTRAS[id] = arr;
+  // en las paradas sólo vale el tramo con los brazos arriba (el inicio con brazos abiertos se confundía con los giros)
+  MUESTRAS[id] = ['paradaNormal', 'paradaEmergencia'].includes(id) ? arr.filter(m => m.d[0].y > 0.35 && m.i[0].y > 0.35) : arr;
 }
 
 export function crearDetector() {
@@ -51,7 +53,7 @@ export function crearDetector() {
     const out = {};
     for (const [id, arr] of Object.entries(MUESTRAS)) {
       let mejor = 9;
-      for (const m of arr) { let e = 0; for (const k of ['d', 'i']) e += med[k][0].angleTo(m[k][0]) + 0.15 * med[k][1].angleTo(m[k][1]); e /= 2.3; /* casi todo el peso en la posición de los brazos */ if (e < mejor) mejor = e; }
+      for (const m of arr) { let e = 0; for (const k of ['d', 'i']) e += med[k][0].angleTo(m[k][0]) + 0.3 * med[k][1].angleTo(m[k][1]); e /= 2.6; /* casi todo el peso en la posición de los brazos */ if (e < mejor) mejor = e; }
       out[id] = mejor;
     }
     return out;
@@ -71,7 +73,8 @@ export function crearDetector() {
       const esp = esperada ? grupo(esperada) : null;
       for (const id of Object.keys(p)) {
         const seMueve = activo && (ESTATICAS.has(id) || mov > MOVIMIENTO);
-        const ok = esp ? (esp.includes(id) && Math.min(...esp.map(x => p[x])) < UMBRAL_ESPERADA && seMueve)
+        const pe = esp ? Math.min(...esp.map(x => p[x])) : 9;
+        const ok = esp ? (esp.includes(id) && pe < UMBRAL_ESPERADA && pe <= e + MARGEN && seMueve)
                        : (grupo(mejor).includes(id) && p[mejor] < UMBRAL && seMueve);
         acum[id] = ok ? (acum[id] || 0) + dt : Math.max(0, (acum[id] || 0) - dt);
       }

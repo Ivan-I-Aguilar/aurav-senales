@@ -11,7 +11,7 @@ import { crearAT802GLB } from './at802glb.js?v=20261008a';
 import { crearSenaleroGLB, crearSenalero, SENAS, ORDEN_CURSO } from './senalero.js?v=20261008b';
 import { crearPlataforma, colocarCarteles, crearTachoFOD, crearCartel, estacionarAviones, crearCono, crearCalza, crearFOD, crearEPP, crearPaleta,
   PUESTO, POS_SENALERO, POS_SALIDA, SALIDA_GIRO, SALIDA_FIN_GIRO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261008e';
-import { crearDetector } from './gestos.js?v=20261008d';
+import { crearDetector } from './gestos.js?v=20261008e';
 import { crearPanelVR } from './panelvr.js?v=20261008b';
 import { crearAudio } from './audio.js?v=20261008a';
 import { Constancia } from './constancia.js?v=20261008c';
@@ -184,8 +184,8 @@ function senaDelAlumno(id, origen = 'menu') {
   else { intentosMal++; audio.aviso();   // modo instructivo: se corrige, no se penaliza
     decir(`Esa es «${NOMBRE(id)}». Mirá la figura y copiá «${NOMBRE(esperada[0])}».`, { hablar: false }); }
 }
-function esperarSena(ids, { pista = 14 } = {}) {
-  const lista = Array.isArray(ids) ? ids : [ids]; esperada = lista; intentosMal = 0; tEsperando = 0; pistaDada = false; pistaSeg = pista; detector.reiniciar(); guiaSena(lista[0]);
+function esperarSena(ids, { pista = 14, guia = true } = {}) {
+  const lista = Array.isArray(ids) ? ids : [ids]; esperada = lista; intentosMal = 0; tEsperando = 0; pistaDada = false; pistaSeg = pista; detector.reiniciar(); guiaSena(guia ? lista[0] : null);
   const tok = corrida; return new Promise((res, rej) => { let hecho = false; const mio = id => { hecho = true; res(id); }; alResolver = mio;
     vigilantes.push({ cond: () => hecho, res() { }, rej: () => { if (alResolver === mio) { esperada = null; alResolver = null; guiaSena(null); } rej(new Corte()); }, tok }); });
 }
@@ -309,11 +309,18 @@ function reiniciarMundo() { guiaDestino = null; senalero.position.copy(POS_SENAL
   tutor.position.copy(enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z)).setY(0); mostrarMenuSenas(false); tareas(null); rotulo(''); puedeCaminar = false; vistaCabina = false; $('cabina').hidden = true; $('cabina').classList.remove('activa');
 }
 async function senaObs(id, seg = 0) { senalero.userData.hacer(id); rotulo('Señalero: ' + NOMBRE(id)); if (seg) await esperar(seg); }
-async function cruceHilux(alPasarFrente) {
-  hilux.visible = true; const z = PUESTO.z + 1; let x = 26; /* cruza entre la nariz del avión que llega y el señalero */ hilux.position.set(x, 0, z); hilux.rotation.y = Math.PI; let avisado = false;
-  await esperarQue(() => { x -= 7 * dtActual; hilux.position.x = x; if (!avisado && x < 12) { avisado = true; alPasarFrente?.(); } return x < -32; });
-  hilux.visible = false;
+// sonido del motor de la camioneta (sintetizado): se escucha acercarse antes de verla entrar a la plataforma
+const motorHilux = (() => { const ctx = audio.oyente.context, sr = ctx.sampleRate, n = sr * 2, b = ctx.createBuffer(1, n, sr), d = b.getChannelData(0); let f = 0;
+  for (let i = 0; i < n; i++) { const t = i / sr, w = Math.random() * 2 - 1; f = 0.97 * f + 0.03 * w;
+    d[i] = (Math.sin(2 * Math.PI * 38 * t) * 0.35 + Math.sin(2 * Math.PI * 76 * t + Math.sin(2 * Math.PI * 9 * t)) * 0.25 + f * 2.2) * (0.75 + 0.25 * Math.sin(2 * Math.PI * 19 * t)); }
+  return audio.posicional(hilux, b, { loop: true, volumen: 2.2, ref: 7 }); })();
+async function cruceHilux(alEntrar, { desde = 26, vel = 7 } = {}) {
+  hilux.visible = true; const z = PUESTO.z - 5; let x = desde; /* cruza entre la nariz del avión que llega y el señalero */ hilux.position.set(x, 0, z); hilux.rotation.y = Math.PI; let avisado = false;
+  if (audio.oyente.context.state === 'running' && !motorHilux.isPlaying) motorHilux.play();
+  await esperarQue(() => { x -= vel * dtActual; hilux.position.x = x; if (!avisado && x < 18.5) { avisado = true; alEntrar?.(); } return x < -32; });   // 18,5: borde este de la plataforma
+  hilux.visible = false; if (motorHilux.isPlaying) motorHilux.stop();
 }
+let tJuego = 0;
 function vigilarPosicion(POS = POS_SENALERO) {   // el piloto tiene que verte: si te alejás de la posición, para
   let fuera = false, guardado = null; return () => { const d = posAlumno().distanceTo(POS);
     if (d > 3 && !fuera && A.v > 0.05) { fuera = true; guardado = [A.objetivo, A.vmax]; pararAvion(true); registrarError('Te alejaste de la posición de señalero con el avión en movimiento'); decir('¡Volvé a tu posición! El piloto te perdió de vista y frenó. Sin contacto visual con el señalero, el avión no se mueve.'); }
@@ -341,10 +348,10 @@ async function obsLlegada() {
   decir('Después le indica la posición: este es tu puesto.'); await senaObs('posicion', 4);
   decir('«Avanzar»: el avión rueda por la calle de rodaje.'); await senaObs('avanzar'); moverAvion(17, 2.2); await esperarQue(() => A.s >= 16.5);
   decir('El avión tiene que girar hacia la izquierda del señalero (que para el piloto es su derecha): el brazo izquierdo queda extendido señalando hacia dónde ir y el derecho marca el giro.'); await senaObs('giroDerecha'); moverAvion(29.4, 1.5); await esperarQue(() => A.s >= 29);
-  decir('De nuevo «avanzar», ahora derecho hacia el señalero.'); await senaObs('avanzar'); moverAvion(36, 1.8);
-  await esperarQue(() => A.s >= 31);
-  decir('¡Atención! Una camioneta cruza delante del avión: «parada de emergencia» enseguida.');
-  const cruce = cruceHilux(); await esperar(0.6); await senaObs('paradaEmergencia'); pararAvion(true);
+  decir('De nuevo «avanzar», ahora derecho hacia el señalero.'); await senaObs('avanzar'); moverAvion(38.5, 1.3);
+  await esperarQue(() => A.s >= 30);
+  decir('¡Atención! ¿Escuchás el motor? Se acerca una camioneta por la derecha: cuando entra a la plataforma, el señalero da «parada de emergencia» enseguida.');
+  const cruce = cruceHilux(null, { desde: 48, vel: 8.5 }); await esperarQue(() => hilux.position.x < 20); await senaObs('paradaEmergencia'); pararAvion(true);
   await cruce; decir('El vehículo pasó y la zona quedó libre. El señalero retoma: «avanzar».'); await senaObs('avanzar', 1); moverAvion(36, 1.6); await esperarQue(() => A.s >= 35.6);
   decir('Cerca de la marca: «bajar velocidad».'); await senaObs('bajarVelocidad'); moverAvion(PARADA, 0.7); await esperarQue(() => A.s >= PARADA - 0.4);
   decir('«Parada normal» justo sobre la barra amarilla.'); await senaObs('paradaNormal'); pararAvion(false); await esperar(3);
@@ -417,13 +424,19 @@ async function protLlegada() {
   await esperarQue(() => { vigilar(); return A.s >= 16.6 && A.v < 0.05; });
   await paso('giroDerecha', 'Hacé que gire hacia el puesto: hacia tu izquierda. Estás de frente al avión, así que para el piloto es su derecha.'); moverAvion(29.4, 1.5);
   await esperarQue(() => { vigilar(); return A.s >= 29.3 && A.v < 0.05; });
-  await paso('avanzar', 'Que avance derecho hacia vos.'); moverAvion(36, 1.8);
-  await esperarQue(() => { vigilar(); return A.s >= 31; });
+  await paso('avanzar', 'Que avance derecho hacia vos. Atento a lo que pasa alrededor.'); moverAvion(38.5, 1.3);
+  await esperarQue(() => { vigilar(); return A.s >= 30; });
   // 3) imprevisto: incursión de la Hilux
-  decir('¡Un vehículo va a cruzar delante del avión! Ordená «parada de emergencia» ya.'); let tCruce = 0, reacciono = false; const cruce = cruceHilux(() => { tCruce = performance.now(); });
-  const resp = esperarSena(['paradaEmergencia'], { pista: 99 }).then(() => { reacciono = true; RES.reaccion = tCruce ? (performance.now() - tCruce) / 1000 : 0; pararAvion(true); decir('¡Bien! Parada de emergencia a tiempo.'); });
-  await esperarQue(() => reacciono || (tCruce && performance.now() - tCruce > 4500));
-  if (!reacciono) { esperada = null; pararAvion(true); registrarError('No diste la parada de emergencia ante el vehículo'); decir('¡El vehículo cruzó delante del avión! Correspondía «parada de emergencia» enseguida. Esta vez el piloto lo vio y frenó solo.'); resp.catch(() => { }); }
+  // imprevisto sin aviso: se oye el motor de una camioneta que se acerca por la derecha y entra a la plataforma.
+  // El alumno tiene que reaccionar solo (sin figura guía); se mide el tiempo desde que entra a la plataforma.
+  let tCruce = 0, reacciono = false; const cruce = cruceHilux(() => { tCruce = tJuego; }, { desde: 48, vel: 8.5 });
+  const LIMITE = 3.0;
+  const resp = esperarSena(['paradaEmergencia'], { pista: 99, guia: false }).then(() => { reacciono = true; RES.reaccion = tCruce ? tJuego - tCruce : 0; pararAvion(true); guiaSena(null);
+    if (!tCruce) decir('¡Bien! Lo escuchaste venir y paraste antes de que entrara a la plataforma.');
+    else if (RES.reaccion <= LIMITE) decir(`¡Bien! Parada de emergencia en ${RES.reaccion.toFixed(1)} s.`);
+    else { registrarError(`Parada de emergencia tardía ante el vehículo (${RES.reaccion.toFixed(1)} s)`); decir(`Paraste, pero tarde: ${RES.reaccion.toFixed(1)} s. Ante un vehículo en la zona de maniobra, la parada de emergencia tiene que ser inmediata.`); } });
+  await esperarQue(() => reacciono || (tCruce && tJuego - tCruce > LIMITE + 2.5));
+  if (!reacciono) { esperada = null; guiaSena(null); pararAvion(true); registrarError('No diste la parada de emergencia ante el vehículo'); decir('¡El vehículo cruzó delante del avión! Correspondía «parada de emergencia» enseguida: brazos cruzados arriba. Esta vez el piloto lo vio y frenó solo.'); resp.catch(() => { }); }
   await cruce; await esperar(0.8);
   await paso('avanzar', 'La zona quedó libre. Indicale que continúe.'); moverAvion(36, 1.6);
   await esperarQue(() => { vigilar(); return A.s >= 35.9 && A.v < 0.05; });
@@ -591,7 +604,7 @@ function actualizarGuia(dt) {
 // ---------- bucle
 const reloj = new THREE.Clock(); let velJuego = 1;   // (sólo para pruebas)
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(reloj.getDelta(), 0.05) * velJuego * (pausado ? 0 : 1); dtActual = dt;
+  const dt = Math.min(reloj.getDelta(), 0.05) * velJuego * (pausado ? 0 : 1); dtActual = dt; tJuego += dt;
   ambiente.actualizar(dt); actualizarAvion(dt); mirarAvion(senalero); senalero.userData.actualizar(dt); actualizarTutor(dt);
   if (renderer.xr.isPresenting) actualizarVR(dt); else moverPC(dt);
   revisarPista(dt); revisarVigilantes(); actualizarGuia(dt);
