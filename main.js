@@ -10,11 +10,11 @@ import { crearEscenario } from './escenario.js?v=20261008a';
 import { crearAT802GLB } from './at802glb.js?v=20261008a';
 import { crearSenaleroGLB, crearSenalero, SENAS, ORDEN_CURSO } from './senalero.js?v=20261008b';
 import { crearPlataforma, colocarCarteles, crearTachoFOD, crearCartel, estacionarAviones, crearCono, crearCalza, crearFOD, crearEPP, crearPaleta,
-  PUESTO, POS_SENALERO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261008d';
+  PUESTO, POS_SENALERO, POS_SALIDA, SALIDA_GIRO, SALIDA_FIN_GIRO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261008e';
 import { crearDetector } from './gestos.js?v=20261008b';
 import { crearPanelVR } from './panelvr.js?v=20261008b';
 import { crearAudio } from './audio.js?v=20261008a';
-import { Constancia } from './constancia.js?v=20261008b';
+import { Constancia } from './constancia.js?v=20261008c';
 
 const ALTURA_OJOS = 1.70;          // punto de vista del protagonista (pedido de Iván)
 const ALCANCE = 4.5;               // distancia máxima para levantar FOD / poner conos
@@ -80,13 +80,13 @@ const T = { modo: 'ala', destino: null, vel: 1.6 };   // modo: 'ala' (acompaña 
 function tutorIrA(p, vel = 1.6) { T.modo = 'ir'; T.destino = p.clone(); T.vel = vel; return esperarQue(() => tutor.position.distanceTo(T.destino) < 0.15); }
 function tutorAlAla() { T.modo = 'ala'; }
 // el compañero de punta de ala acompaña sólo dentro de la plataforma: cuando el ala queda libre se separa y vuelve caminando
-function tutorSeQueda() { const p = tutor.position.clone(); p.z = Math.min(p.z, -24); p.x = Math.min(p.x, 10); T.modo = 'ir'; T.destino = p.add(new THREE.Vector3(0, 0, -2.5)); T.vel = 1.4; }
+function tutorSeQueda() { T.modo = 'ir'; T.destino = tutor.position.clone().add(new THREE.Vector3(0, 0, -3)); T.vel = 1.4; }
 function tutorAlAlaYa() { T.modo = 'ala'; tutor.position.copy(enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z)).setY(0); tutor.rotation.y = avion.rotation.y - Math.PI / 2; }
 const PUNTA_ALA = new THREE.Vector3(-0.8, 0, -11.2);
 function actualizarTutor(dt) {
   let dest = null, vel = T.vel;
   if (T.modo === 'ala') { dest = enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z); dest.y = 0; vel = Math.max(1.6, A.v * 1.4);
-    if (A.tr === SALIDA && A.s > 26) { tutorSeQueda(); dest = T.destino; vel = T.vel; } }
+    if (A.tr === SALIDA && A.s > SALIDA_FIN_GIRO + 4) { tutorSeQueda(); dest = T.destino; vel = T.vel; } }
   if (T.modo === 'ir') dest = T.destino;
   let v = 0;
   if (dest) { const d = dest.clone().sub(tutor.position); d.y = 0; const L = d.length();
@@ -102,12 +102,13 @@ function ponerCalzas(v) { calzas.forEach((c, i) => { c.visible = v; c.position.c
 const conos = CONOS_DIAMANTE.map(() => { const c = crearCono(); c.visible = false; escena.add(c); return c; });
 const fantasmas = CONOS_DIAMANTE.map(() => { const c = crearCono(); c.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; o.castShadow = false; } }); c.visible = false; escena.add(c); return c; });
 function ubicarConos() { CONOS_DIAMANTE.forEach(([x, z], i) => { const p = enAvion(x, 0, z); p.y = 0; conos[i].position.copy(p); fantasmas[i].position.copy(p); }); }
-const mesaEPP = crearEPP(); mesaEPP.position.set(POS_SENALERO.x - 4.5, 0, POS_SENALERO.z - 2.5); mesaEPP.rotation.y = 0.4; escena.add(mesaEPP);
+const mesaEPP = crearEPP(); mesaEPP.position.set(-8, 0, -18.5); mesaEPP.rotation.y = 0.4; escena.add(mesaEPP);
 colocarCarteles(escena);
 { const c = crearCartel(['EPP', 'EQUIPO DE PROTECCIÓN'], { ancho: 1.3, alto: 0.75, altura: 1.9, fondo: '#c8e63a', color: '#111111', borde: '#111111' }); c.position.copy(mesaEPP.position).add(new THREE.Vector3(-1.2, 0, -0.9)); c.rotation.y = 0.4; escena.add(c); }
 let fods = [];
-// tachos de FOD: uno junto a la marca S y otro al costado del puesto P3
-const tachos = [[POS_SENALERO.x + 3.2, POS_SENALERO.z + 3.5], [PUESTO.x - 6.5, PUESTO.z - 10]].map(([x, z]) => { const t = crearTachoFOD(); t.position.set(x, 0, z); escena.add(t); return t; });
+// tachos de FOD repartidos alrededor del puesto P3
+// (fuera del barrido de las alas en la llegada y en la salida)
+const tachos = [[-6, -21], [-14, 4], [15, 3]].map(([x, z]) => { const t = crearTachoFOD(); t.position.set(x, 0, z); escena.add(t); return t; });
 const tachoCercano = p => tachos.reduce((a, b) => (a.position.distanceTo(p) <= b.position.distanceTo(p) ? a : b));
 function tirarEnTacho() {   // el alumno lleva el FOD juntado hasta un tacho y lo tira
   return new Promise(res => { interactivos = tachos.map(t => ({ obj: t, alcanceExtra: 0.5, alTocar: () => { interactivos = []; audio.ok(); decir('FOD descartado en el tacho.', { hablar: false }); res(); } })); });
@@ -260,7 +261,7 @@ function moverPC(dt) {
   if (caminarA) { const d = caminarA.clone().sub(rig.position); d.y = 0; const L = d.length(); if (L < 0.1) caminarA = null; else rig.position.addScaledVector(d.normalize(), Math.min(L, 3.2 * dt)); }
 }
 $('cabina').onclick = () => { vistaCabina = !vistaCabina; $('cabina').classList.toggle('activa', vistaCabina); if (vistaCabina) { yaw = 0; pitch = -0.08; } else { teletransportar(rig.position.x, rig.position.z); vistaObservador(); } };
-function vistaObservador() { teletransportar(POS_SENALERO.x - 3.5, POS_SENALERO.z - 3, enAvion(0, 0, 0)); }
+function vistaObservador(pos = POS_SENALERO) { teletransportar(pos.x - 3, pos.z - 2.5, enAvion(0, 0, 0)); }
 
 // ---------- VR
 const botonVR = $('entrar-vr');
@@ -299,19 +300,19 @@ function abrirMenuVR() { if (menuVRAbierto) return; menuVRAbierto = true;
     id => { panelVR.ocultar(); menuVRAbierto = false; if (id !== '_cerrar') senaDelAlumno(id, 'menu'); }, camara); }
 
 // ---------- utilidades de las fases
-function reiniciarMundo() { guiaDestino = null;
+function reiniciarMundo() { guiaDestino = null; senalero.position.copy(POS_SENALERO);
   A.motor = false; A.rpm = 0; ponerAvion(LLEGADA, PARADA); ponerCalzas(false); conos.forEach(c => c.visible = false); fantasmas.forEach(c => c.visible = false);
   sembrarFOD([]); interactivos = []; hilux.visible = false; senalero.visible = true; senalero.userData.hacer(null); tutor.visible = true; T.modo = 'ala';
   tutor.position.copy(enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z)).setY(0); mostrarMenuSenas(false); tareas(null); rotulo(''); puedeCaminar = false; vistaCabina = false; $('cabina').hidden = true; $('cabina').classList.remove('activa');
 }
 async function senaObs(id, seg = 0) { senalero.userData.hacer(id); rotulo('Señalero: ' + NOMBRE(id)); if (seg) await esperar(seg); }
 async function cruceHilux(alPasarFrente) {
-  hilux.visible = true; const z = POS_SENALERO.z + 18; let x = 26; hilux.position.set(x, 0, z); hilux.rotation.y = Math.PI; let avisado = false;
+  hilux.visible = true; const z = PUESTO.z + 1; let x = 26; /* cruza entre la nariz del avión que llega y el señalero */ hilux.position.set(x, 0, z); hilux.rotation.y = Math.PI; let avisado = false;
   await esperarQue(() => { x -= 7 * dtActual; hilux.position.x = x; if (!avisado && x < 12) { avisado = true; alPasarFrente?.(); } return x < -32; });
   hilux.visible = false;
 }
-function vigilarPosicion() {   // el piloto tiene que verte: si te alejás de la posición, para
-  let fuera = false, guardado = null; return () => { const d = posAlumno().distanceTo(POS_SENALERO);
+function vigilarPosicion(POS = POS_SENALERO) {   // el piloto tiene que verte: si te alejás de la posición, para
+  let fuera = false, guardado = null; return () => { const d = posAlumno().distanceTo(POS);
     if (d > 3 && !fuera && A.v > 0.05) { fuera = true; guardado = [A.objetivo, A.vmax]; pararAvion(true); registrarError('Te alejaste de la posición de señalero con el avión en movimiento'); decir('¡Volvé a tu posición! El piloto te perdió de vista y frenó. Sin contacto visual con el señalero, el avión no se mueve.'); }
     if (d <= 2.5 && fuera) { fuera = false; moverAvion(...guardado); decir('Bien, el piloto te ve de nuevo. Retomá la indicación.'); return 'volvio'; } return fuera ? 'fuera' : 'ok'; }; }
 
@@ -320,7 +321,7 @@ const RES = { reaccion: null, parada: null, inicio: 0 };
 async function intro() {
   reiniciarMundo(); faseTitulo('Señaleros de plataforma'); ponerAvion(LLEGADA, PARADA); A.motor = false; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true);
   teletransportar(POS_SENALERO.x - 3.5, POS_SENALERO.z - 3, enAvion(0, 0, 0)); senalero.userData.hacer('saludo');
-  const r = await preguntar('Señaleros de plataforma', 'Curso de Personal de Rampa · AAXOD\n\nPrimero vas a OBSERVAR cómo un señalero guía la llegada y la salida de un AT-802. Después vas a ser el PROTAGONISTA: te ponés el equipo, controlás el FOD, te parás a 32 m de la nariz y guiás al piloto.\n\nEn Quest los controles son tus paletas. En PC o celular elegís las señas en el menú de abajo.',
+  const r = await preguntar('Señaleros de plataforma', 'Curso de Personal de Rampa · AAXOD\n\nPrimero vas a OBSERVAR cómo un señalero guía la llegada y la salida de un AT-802. Después vas a ser el PROTAGONISTA: te ponés el equipo, controlás el FOD, te parás a 7 m de la nariz y guiás al piloto.\n\nEn Quest los controles son tus paletas. En PC o celular elegís las señas en el menú de abajo.',
     [{ id: 'empezar', texto: 'Empezar desde el principio' }, { id: 'practica', texto: 'Ir directo a la práctica' }, { id: 'elegir', texto: 'Ir a una fase', secundario: true }]);
   audio.reanudar();
   if (r === 'practica') return 'equipo';
@@ -331,7 +332,7 @@ async function intro() {
 async function obsLlegada() {
   reiniciarMundo(); faseTitulo('1 · Observá la llegada'); $('cabina').hidden = false;
   ponerAvion(LLEGADA, 0); A.motor = true; A.rpm = 1; tutorAlAlaYa(); vistaObservador();
-  decir('Soy tu compañero de punta de ala. Mirá al señalero: está parado sobre la marca, a 32 metros de donde va a quedar la nariz. Desde ahí el piloto lo ve siempre. Podés girar la vista o ponerte en la cabina para ver lo que ve el piloto.');
+  decir('Soy tu compañero de punta de ala. Mirá al señalero: está parado sobre la marca, a 7 metros de donde va a quedar la nariz. Desde ahí el piloto lo ve siempre. Podés girar la vista o ponerte en la cabina para ver lo que ve el piloto.');
   await esperar(7);
   decir('Primero saluda al piloto que llega, para que lo identifique como su señalero.'); await senaObs('saludo', 4);
   decir('Después le indica la posición: este es tu puesto.'); await senaObs('posicion', 4);
@@ -355,8 +356,8 @@ async function obsLlegada() {
 
 async function obsSalida() {
   reiniciarMundo(); faseTitulo('2 · Observá la salida'); $('cabina').hidden = false;
-  ponerAvion(SALIDA, 0); A.motor = false; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true); vistaObservador();
-  sembrarFOD([['piedra', 3, -10], ['precinto', -1.2, -12], ['tornillo', 6.5, -19]]);
+  ponerAvion(SALIDA, 0); A.motor = false; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true); senalero.position.copy(POS_SALIDA); vistaObservador(POS_SALIDA);
+  sembrarFOD([['piedra', 1.5, -5], ['precinto', 4, -8.5], ['tornillo', 10, -10.5]]);
   decir('Antes de la salida: control de FOD. Cualquier objeto suelto puede ser aspirado por el motor o despedido por la hélice.');
   T.modo = 'ir'; for (const f of [...fods]) { await tutorIrA(f.position.clone().add(new THREE.Vector3(0.5, 0, 0.5))); f.visible = false; audio.ok(); }
   decir('Lo que se junta no se guarda en el bolsillo: se tira en el tacho identificado «FOD».'); { const t = tachoCercano(tutor.position); await tutorIrA(t.position.clone().add(new THREE.Vector3(0.6, 0, 0.6))); audio.ok(); } await esperar(1);
@@ -367,10 +368,10 @@ async function obsSalida() {
   decir('Recién entonces: «encender motores».'); await senaObs('encenderMotores'); A.motor = true; await esperarQue(() => A.rpm > 0.95); await esperar(1.5);
   decir('Motor estabilizado: «retirar calzas».'); await senaObs('retirarCalzas'); await tutorIrA(enAvion(-1.3, 0, -2.3)); ponerCalzas(false); audio.ok(); tutorAlAla(); await esperar(2.5);
   decir('«Todo despejado»: el señalero confirma que no hay obstáculos.'); await senaObs('todoDespejado', 3.5);
-  decir('«Avanzar».'); await senaObs('avanzar'); moverAvion(12, 2); await esperarQue(() => A.s >= 11.6);
-  decir('«Giro a la derecha», hacia la pista.'); await senaObs('giroDerecha'); moverAvion(21.4, 1.5); await esperarQue(() => A.s >= 21);
+  decir('Para la salida el señalero se para en la marca S2, adelante a la izquierda: el avión gira a la derecha y el ala izquierda barre todo lo que tiene adelante. «Avanzar».'); await senaObs('avanzar'); moverAvion(SALIDA_GIRO, 1.5); await esperarQue(() => A.s >= SALIDA_GIRO - 0.1);
+  decir('«Giro a la derecha», hacia la pista.'); await senaObs('giroDerecha'); moverAvion(SALIDA_FIN_GIRO, 1.5); await esperarQue(() => A.s >= SALIDA_FIN_GIRO - 0.4);
   decir('«Avanzar» y el avión sale hacia la pista. El compañero de punta de ala acompaña hasta que el ala queda libre de obstáculos y ahí se separa.'); await senaObs('avanzar'); moverAvion(SALIDA.largo, 3);
-  await esperarQue(() => A.s >= 24); tutorSeQueda();
+  await esperarQue(() => A.s >= SALIDA_FIN_GIRO + 2.5); tutorSeQueda();
   await esperar(5); senalero.userData.hacer('saludo'); rotulo('Señalero: despedida'); await esperar(4);
   return await preguntar('Salida observada', 'Ahora te toca a vos. Primero te vas a poner el equipo de protección.', [{ id: 'equipo', texto: 'Continuar' }, { id: 'obsSalida', texto: 'Repetir', secundario: true }]);
 }
@@ -393,17 +394,17 @@ async function protLlegada() {
   ponerAvion(LLEGADA, 0); A.motor = true; A.rpm = 1; tutorAlAlaYa(); RES.inicio = performance.now(); errores = []; RES.errLlegada = null; RES.parada = null; RES.reaccion = null;
   teletransportar(mesaEPP.position.x + 0.5, mesaEPP.position.z + 1.8, POS_SENALERO); puedeCaminar = true;
   // 1) FOD en el puesto
-  sembrarFOD([['tornillo', 0.8, -12], ['trapo', -2.2, -18], ['lata', 1.6, -24], ['botella', -0.8, -30]]);
-  const lista = () => tareas([[`Levantar el FOD y tirarlo en el tacho (${fods.filter(f => !f.visible).length}/${fods.length})`, fods.every(f => !f.visible)], ['Pararte en la marca S (32 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
+  sembrarFOD([['tornillo', 0.8, -8], ['trapo', -2.2, -4], ['lata', 1.6, 1], ['botella', -0.8, 5]]);
+  const lista = () => tareas([[`Levantar el FOD y tirarlo en el tacho (${fods.filter(f => !f.visible).length}/${fods.length})`, fods.every(f => !f.visible)], ['Pararte en la marca S (7 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
   lista();
   decir('El AT-802 está por llegar al puesto P3. Antes, recorré la zona entre tu posición y el puesto P3 y levantá todo el FOD que encuentres. Hay cuatro objetos. Tocá cada uno cuando estés cerca.');
   interactivos = fods.map(f => ({ obj: f, alTocar: it => { f.visible = false; audio.ok(); interactivos = interactivos.filter(x => x !== it); lista(); const q = fods.filter(x => x.visible).length; decir(q ? `Bien. Quedan ${q}.` : 'Juntaste todo. Según la reglamentación, el FOD se tira en un tacho identificado «FOD»: llevalo al tacho más cercano.'); } }));
   await esperarQue(() => fods.every(f => !f.visible)); await tirarEnTacho();
   // 2) posición
-  tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
-  decir('Andá a la marca S, a 32 metros de donde va a quedar la nariz. Desde ahí el piloto te ve todo el tiempo. Mirá hacia el avión.');
+  tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (7 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
+  decir('Andá a la marca S, a 7 metros de donde va a quedar la nariz. Desde ahí el piloto te ve todo el tiempo. Mirá hacia el avión.');
   guiaDestino = POS_SENALERO; await esperarQue(() => posAlumno().distanceTo(POS_SENALERO) < 1.4); guiaDestino = null;
-  const fijar = () => tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', true], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]); fijar();
+  const fijar = () => tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (7 m)', true], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]); fijar();
   const pos = vigilarPosicion(); const vigilar = () => pos();
   mostrarMenuSenas(true);
   const paso = async (id, texto) => { if (texto) decir(texto); await esperarSena(id); };
@@ -436,13 +437,13 @@ async function protLlegada() {
   await paso('colocarCalzas', 'Avión detenido. Indicale que se colocan las calzas.'); T.modo = 'ir'; await tutorIrA(enAvion(-1.3, 0, -2.3)); ponerCalzas(true); audio.ok(); tutorAlAla();
   await paso('detenerMotores', 'Calzas puestas. Ahora, que detenga el motor.'); A.motor = false; mostrarMenuSenas(false); rotulo('');
   // 5) diamante
-  tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', true], ['Guiar al avión hasta la barra de parada', true], ['Armar el diamante de seguridad (0/5)', false]]);
+  tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (7 m)', true], ['Guiar al avión hasta la barra de parada', true], ['Armar el diamante de seguridad (0/5)', false]]);
   await esperarQue(() => A.rpm < 0.15);
   teletransportar(PUESTO.x - 5, PUESTO.z - 9, enAvion(-2, 0, 0));
   decir('Motor detenido. Te acercás al avión. Armá el diamante de seguridad: caminá hasta cada cono transparente y tocalo para colocarlo. Nariz, puntas de ala y dos en la cola.');
   ubicarConos(); let puestos = 0; fantasmas.forEach(f => f.visible = true);
   interactivos = fantasmas.map((f, i) => ({ obj: f, alcanceExtra: 2.5, alTocar: it => { f.visible = false; conos[i].visible = true; puestos++; audio.ok(); interactivos = interactivos.filter(x => x !== it);
-    tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', true], ['Guiar al avión hasta la barra de parada', true], [`Armar el diamante de seguridad (${puestos}/5)`, puestos === 5]]); } }));
+    tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (7 m)', true], ['Guiar al avión hasta la barra de parada', true], [`Armar el diamante de seguridad (${puestos}/5)`, puestos === 5]]); } }));
   await esperarQue(() => puestos === 5); interactivos = []; decir('Diamante armado. ¡Llegada completa!'); await esperar(3);
   RES.errLlegada = errores.length;
   return await preguntar('Llegada guiada', `Errores: ${errores.length}.` + (RES.parada != null ? `\nParada a ${RES.parada.toFixed(1)} m de la barra.` : '') + (RES.reaccion != null ? `\nReacción ante el vehículo: ${RES.reaccion.toFixed(1)} s.` : '\nNo reaccionaste ante el vehículo.'), [{ id: 'protSalida', texto: 'Continuar: guiar la salida' }, { id: 'protLlegada', texto: 'Repetir', secundario: true }]);
@@ -453,19 +454,19 @@ async function protSalida() {
   ponerAvion(SALIDA, 0); A.motor = false; A.rpm = 0; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true); if (!RES.inicio) RES.inicio = performance.now();
   teletransportar(PUESTO.x - 4, PUESTO.z - 9, enAvion(0, 0, 0)); puedeCaminar = true;
   const estado = { fod: false, conos: false, pos: false, salida: false };
-  const lista = () => tareas([['FOD del recorrido al tacho', estado.fod], ['Retirar el diamante (conos)', estado.conos], ['Pararte en la marca S', estado.pos], ['Encendido y salida', estado.salida]]); lista();
-  sembrarFOD([['piedra', 3, -10], ['precinto', -1.2, -12.5], ['tornillo', 6.5, -19], ['trapo', 12, -20.5]]);
-  decir('El avión va a salir hacia la pista: recto hacia la marca S y después a la derecha, por la línea amarilla. Revisá ese recorrido y levantá el FOD. Son cuatro objetos.');
+  const lista = () => tareas([['FOD del recorrido al tacho', estado.fod], ['Retirar el diamante (conos)', estado.conos], ['Pararte en la marca S2 (salida)', estado.pos], ['Encendido y salida', estado.salida]]); lista();
+  sembrarFOD([['piedra', 1.5, -5], ['precinto', 4, -8.5], ['tornillo', 10, -10.5], ['trapo', 15, -9.5]]);
+  decir('El avión va a salir hacia la pista girando a la derecha, por la línea amarilla. Revisá ese recorrido y levantá el FOD. Son cuatro objetos.');
   interactivos = fods.map(f => ({ obj: f, alTocar: it => { f.visible = false; audio.ok(); interactivos = interactivos.filter(x => x !== it); const q = fods.filter(x => x.visible).length; decir(q ? `Bien. Quedan ${q}.` : 'Recorrido limpio. Tirá lo que juntaste en el tacho de FOD.'); } }));
   await esperarQue(() => fods.every(f => !f.visible)); await tirarEnTacho(); estado.fod = true; lista();
   decir('Ahora retirá los conos del diamante: tocá cada uno.');
   interactivos = conos.map(c => ({ obj: c, alcanceExtra: 2.5, alTocar: it => { c.visible = false; audio.aviso(); interactivos = interactivos.filter(x => x !== it); if (conos.every(x => !x.visible)) { estado.conos = true; lista(); } } }));
   await esperarQue(() => estado.conos); interactivos = [];
-  decir('Andá a la marca S y mirá al avión.');
+  decir('Andá a la marca S2, adelante a la izquierda del avión: el giro a la derecha barre con el ala izquierda todo lo que está adelante, incluida la marca S. Mirá al avión.');
   // el compañero se queda revisando delante de la hélice: el alumno tiene que esperar a que se aleje
   T.modo = 'ir'; tutorIrA(enAvion(4.2, 0, 0.8), 1.2).catch(() => { });
-  guiaDestino = POS_SENALERO; await esperarQue(() => posAlumno().distanceTo(POS_SENALERO) < 1.4); guiaDestino = null; estado.pos = true; lista();
-  const pos = vigilarPosicion(); mostrarMenuSenas(true);
+  guiaDestino = POS_SALIDA; await esperarQue(() => posAlumno().distanceTo(POS_SALIDA) < 1.4); guiaDestino = null; estado.pos = true; lista();
+  const pos = vigilarPosicion(POS_SALIDA); mostrarMenuSenas(true);
   let tutorSeFue = false; esperar(9).then(async () => { decir('Listo, terminé de revisar adelante. Me voy a la punta del ala.', { hablar: true }); tutorAlAla(); await esperar(3); tutorSeFue = true; }).catch(() => { });
   decir('Tu compañero está revisando delante de la hélice. El encendido se da sólo con la zona de la hélice libre.');
   // encendido: si lo pide con alguien en la zona de la hélice, error grave y no enciende
@@ -475,10 +476,10 @@ async function protSalida() {
   const paso = async (id, texto) => { if (texto) decir(texto); await esperarSena(id); };
   await paso('retirarCalzas', 'Motor estabilizado. Indicale que se retiran las calzas.'); await tutorIrA(enAvion(-1.3, 0, -2.3)); ponerCalzas(false); audio.ok(); tutorAlAla(); await esperar(2);
   await paso('todoDespejado', 'Confirmale que no hay obstáculos.');
-  await paso('avanzar', 'Que avance hacia vos.'); moverAvion(12, 2); await esperarQue(() => { pos(); return A.s >= 11.8 && A.v < 0.05; });
-  await paso('giroDerecha', 'Tiene que girar hacia la pista.'); moverAvion(21.4, 1.5); await esperarQue(() => { pos(); return A.s >= 21.3 && A.v < 0.05; });
+  await paso('avanzar', 'Que empiece a avanzar.'); moverAvion(SALIDA_GIRO, 1.5); await esperarQue(() => { pos(); return A.s >= SALIDA_GIRO - 0.1 && A.v < 0.05; });
+  await paso('giroDerecha', 'Tiene que girar hacia la pista.'); moverAvion(SALIDA_FIN_GIRO, 1.5); await esperarQue(() => { pos(); return A.s >= SALIDA_FIN_GIRO - 0.1 && A.v < 0.05; });
   await paso('avanzar', 'Despedilo: que siga hacia la pista.'); moverAvion(SALIDA.largo, 3); estado.salida = true; lista(); mostrarMenuSenas(false);
-  await esperarQue(() => A.s >= 24); tutorSeQueda(); decir('El ala ya pasó los obstáculos: tu compañero se separa y el avión sigue solo.', { hablar: false });
+  await esperarQue(() => A.s >= SALIDA_FIN_GIRO + 2.5); tutorSeQueda(); decir('El ala ya pasó los obstáculos: tu compañero se separa y el avión sigue solo.', { hablar: false });
   decir('¡Salida completa! El piloto sigue por su cuenta hacia la pista.'); await esperar(6);
   return 'resultado';
 }

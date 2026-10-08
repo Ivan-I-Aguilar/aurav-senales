@@ -1,5 +1,5 @@
 // Plataforma del juego de señaleros: amplía el hormigón del aeródromo de AURAV, marca el puesto (línea de entrada,
-// barra de parada y posición del señalero a 32 m), estaciona 4 AT-802 (versión liviana) y fabrica conos, calzas,
+// barra de parada y posición del señalero a 7 m), estaciona 4 AT-802 (versión liviana) y fabrica conos, calzas,
 // FOD y el equipo de protección personal (EPP).
 import * as THREE from './three.module.js';
 import { GLTFLoader } from './GLTFLoader.js?v=20261008a';
@@ -7,8 +7,11 @@ import { GLTFLoader } from './GLTFLoader.js?v=20261008a';
 // --- geometría del puesto (mundo). El avión de la práctica para con las ruedas principales en PUESTO, rumbo −z.
 export const PUESTO = new THREE.Vector3(0, 0, -2);
 export const NARIZ_X = 2.64;                      // nariz en el marco del avión
-export const DIST_SENALERO = 32;                  // posición recomendada del señalero (dato de Iván / AAXOD)
+export const DIST_SENALERO = 7;                   // posición del señalero frente a la nariz (Iván, 8/10: «exageré con los 32 m, unos 7 m»)
 export const POS_SENALERO = new THREE.Vector3(0, 0, PUESTO.z - NARIZ_X - DIST_SENALERO);
+// Para la salida el señalero se corre adelante a la izquierda (marca S2): el giro a la derecha barre con el ala izquierda
+// todo lo que está adelante del avión, incluida la marca S. Desde S2 el piloto lo ve por la izquierda.
+export const POS_SALIDA = new THREE.Vector3(-12, 0, -10);
 // conos del diamante de seguridad (marco del avión: +x nariz, +z derecha). 1 en la nariz, 1 por punta de ala, 2 en la cola.
 export const CONOS_DIAMANTE = [[4.1, 0], [-1.5, -10.3], [-1.5, 10.3], [-9.0, -1.3], [-9.0, 1.3]];
 const CALZAS = [[0.52, -1.45], [-0.72, -1.45], [0.52, 1.45], [-0.72, 1.45]];
@@ -35,7 +38,8 @@ function trayecto(inicio, rumbo, tramos) {
 export const LLEGADA = trayecto(new THREE.Vector3(26, 0, 15), Math.PI, [['recta', 20], ['arco', 6, -Math.PI / 2], ['recta', 13.5]]);
 export const PARADA = 20 + 6 * Math.PI / 2 + 11;   // distancia recorrida hasta la barra de parada (el trayecto sigue 2,5 m más por si se pasa)
 // Salida: recta hacia el señalero (rumbo −z), giro a la derecha (rumbo +x, hacia la pista) y rodaje por la plataforma sur.
-export const SALIDA = trayecto(PUESTO.clone(), Math.PI / 2, [['recta', 12], ['arco', 6, -Math.PI / 2], ['recta', 30]]);
+export const SALIDA = trayecto(PUESTO.clone(), Math.PI / 2, [['recta', 2], ['arco', 6, -Math.PI / 2], ['recta', 30]]);
+export const SALIDA_GIRO = 2, SALIDA_FIN_GIRO = 2 + 3 * Math.PI;
 
 export function crearPlataforma(escena) {
   const loader = new THREE.TextureLoader();
@@ -46,7 +50,7 @@ export function crearPlataforma(escena) {
     for (let i = 8; i < 12; i++) uv.setXY(i, uv.getX(i) * w / tile, uv.getY(i) * d / tile); b.position.set(x, y, z); b.receiveShadow = true; escena.add(b); return b; };
   losa(39, 24, -1, -0.026, -33, hormigon, 3.2);          // ampliación sur
   losa(32.5, 51, -36.75, -0.027, -19.5, hormigon, 3.2);  // ampliación oeste (estacionamiento)
-  losa(5, 11, 20.5, -0.012, -20, asfalto, 7);            // conexión de la plataforma sur con la pista
+  losa(5, 11, 20.5, -0.012, -10, asfalto, 7);            // conexión de la plataforma sur con la pista
 
   // pintura: línea de entrada (amarilla), barra de parada, posición del señalero
   const amarillo = new THREE.MeshBasicMaterial({ color: 0xf2c200 }), blanco = new THREE.MeshBasicMaterial({ color: 0xf2f2ea });
@@ -54,13 +58,13 @@ export function crearPlataforma(escena) {
     m.rotation.set(-Math.PI / 2, 0, Math.atan2(b.p.x - a.p.x, -(b.p.z - a.p.z)), 'YXZ'); m.rotation.set(0, 0, 0);
     m.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(-(b.p.x - a.p.x), -(b.p.z - a.p.z))).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2));
     m.position.copy(a.p).lerp(b.p, 0.5); m.position.y = 0.012; escena.add(m); } };
-  linea(LLEGADA, 0, LLEGADA.largo); linea(SALIDA, 0, 33);
+  linea(LLEGADA, 0, LLEGADA.largo); linea(SALIDA, 0, 30);
   { const b = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.3), amarillo); b.rotation.x = -Math.PI / 2; b.position.set(PUESTO.x, 0.013, PUESTO.z); escena.add(b); }
-  // posición del señalero: círculo blanco con la «S»
-  { const cv = document.createElement('canvas'); cv.width = cv.height = 256; const c = cv.getContext('2d'); c.strokeStyle = '#f2f2ea'; c.lineWidth = 14; c.beginPath(); c.arc(128, 128, 110, 0, Math.PI * 2); c.stroke();
-    c.fillStyle = '#f2c200'; c.font = 'bold 120px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('S', 128, 134);
+  // posiciones del señalero: círculo blanco con la «S» (llegada) y «S2» (salida)
+  for (const [txt, pos] of [['S', POS_SENALERO], ['S2', POS_SALIDA]]) { const cv = document.createElement('canvas'); cv.width = cv.height = 256; const c = cv.getContext('2d'); c.strokeStyle = '#f2f2ea'; c.lineWidth = 14; c.beginPath(); c.arc(128, 128, 110, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = '#f2c200'; c.font = `bold ${txt.length > 1 ? 96 : 120}px Arial`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, 128, 134);
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(POS_SENALERO.x, 0.014, POS_SENALERO.z); escena.add(m); }
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.014, pos.z); escena.add(m); }
   // cartel del puesto
   { const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128; const c = cv.getContext('2d'); c.fillStyle = '#111'; c.fillRect(0, 0, 256, 128); c.fillStyle = '#f2c200'; c.font = 'bold 90px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('P3', 128, 68);
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; const m = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.1), new THREE.MeshBasicMaterial({ map: t })); m.rotation.x = -Math.PI / 2; m.position.set(1.8, 0.014, PUESTO.z + 3); escena.add(m); }
@@ -157,11 +161,12 @@ export function crearCartel(lineas, { ancho = 1.6, alto = 0.8, altura = 2.0, fon
 export function colocarCarteles(escena) {
   const poner = (c, x, z, rotY) => { c.position.set(x, 0, z); c.rotation.y = rotY; escena.add(c); return c; };
   // puesto de la práctica (P3): a la derecha de la cabecera, mirando al avión que llega por la calle de rodaje
-  poner(crearCartel(['P3', 'PUESTO AT-802'], { ancho: 1.4, alto: 1.0, altura: 2.2 }), 5.5, PUESTO.z - 5, Math.PI * 0.15);
+  poner(crearCartel(['P3', 'PUESTO AT-802'], { ancho: 1.4, alto: 1.0, altura: 2.2 }), 11, PUESTO.z + 3, Math.PI * 0.25);
   // puestos de los estacionados
   [['P1', -43, -16], ['P2', -23, -16], ['P4', -23, -36], ['P5', -43, -36]].forEach(([id, x, z]) => poner(crearCartel([id], { ancho: 1.0, alto: 0.8, altura: 2.0 }), x + 9.8, z - 5.5, 0));
   // posición del señalero (marca S)
-  poner(crearCartel(['S', 'SEÑALERO', '32 m de la nariz'], { ancho: 1.2, alto: 1.1, altura: 2.0, fondo: '#f2c200', color: '#111111', borde: '#111111' }), POS_SENALERO.x + 2.6, POS_SENALERO.z - 0.6, 0);
+  poner(crearCartel(['S', 'SEÑALERO LLEGADA', '7 m de la nariz'], { ancho: 1.3, alto: 1.1, altura: 2.0, fondo: '#f2c200', color: '#111111', borde: '#111111' }), -2, -21.5, 0);
+  poner(crearCartel(['S2', 'SEÑALERO SALIDA'], { ancho: 1.3, alto: 1.0, altura: 2.0, fondo: '#f2c200', color: '#111111', borde: '#111111' }), POS_SALIDA.x - 2.6, POS_SALIDA.z - 0.8, 0.5);
 }
 
 // Tacho de FOD: los objetos levantados se tiran en un recipiente identificado «FOD» (práctica que pidió Iván, 8/10)

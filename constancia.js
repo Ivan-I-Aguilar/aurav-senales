@@ -36,7 +36,7 @@ export class Constancia {
     g.fillStyle = GRIS; g.font = '30px Arial'; g.fillText('Se certifica que', 90, 400);
     g.fillStyle = NEGRO; g.font = 'bold 64px Arial'; g.fillText((datos.nombre || '').trim() || 'Integrante del Personal de Rampa', 90, 475);
     g.fillStyle = TINTA; g.font = '32px Arial';
-    const intro = 'completó la práctica de señalero: observó y guió la llegada y la salida de un AT-802, con equipo de protección, control de FOD, posición a 32 m con contacto visual con el piloto, encendido seguro, parada de emergencia ante un vehículo y diamante de seguridad.';
+    const intro = 'completó la práctica de señalero: observó y guió la llegada y la salida de un AT-802, con equipo de protección, control de FOD, posición a 7 m (S) y a la izquierda en la salida (S2) con contacto visual con el piloto, encendido seguro, parada de emergencia ante un vehículo y diamante de seguridad.';
     let y = 535; for (const l of envolver(g, intro, W - 180)) { g.fillText(l, 90, y); y += 42; }
     y += 18; const x0 = 90, w = W - 180;
     g.fillStyle = '#eef0f2'; g.fillRect(x0, y, w, 54); g.fillStyle = GRIS; g.font = '600 28px Arial'; g.fillText('PRÁCTICA', x0 + 24, y + 37); g.fillText('NOTA', x0 + w - 200, y + 37); y += 54;
