@@ -282,7 +282,7 @@ function abrirMenuVR() { if (menuVRAbierto) return; menuVRAbierto = true;
     id => { panelVR.ocultar(); menuVRAbierto = false; if (id !== '_cerrar') senaDelAlumno(id, 'menu'); }, camara); }
 
 // ---------- utilidades de las fases
-function reiniciarMundo() {
+function reiniciarMundo() { guiaDestino = null;
   A.motor = false; A.rpm = 0; ponerAvion(LLEGADA, PARADA); ponerCalzas(false); conos.forEach(c => c.visible = false); fantasmas.forEach(c => c.visible = false);
   sembrarFOD([]); interactivos = []; hilux.visible = false; senalero.visible = true; senalero.userData.hacer(null); tutor.visible = true; T.modo = 'ala';
   tutor.position.copy(enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z)).setY(0); mostrarMenuSenas(false); tareas(null); rotulo(''); puedeCaminar = false; vistaCabina = false; $('cabina').hidden = true; $('cabina').classList.remove('activa');
@@ -384,7 +384,7 @@ async function protLlegada() {
   // 2) posición
   tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
   decir('Andá a la marca S, a 32 metros de donde va a quedar la nariz. Desde ahí el piloto te ve todo el tiempo. Mirá hacia el avión.');
-  await esperarQue(() => posAlumno().distanceTo(POS_SENALERO) < 1.4);
+  guiaDestino = POS_SENALERO; await esperarQue(() => posAlumno().distanceTo(POS_SENALERO) < 1.4); guiaDestino = null;
   const fijar = () => tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', true], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]); fijar();
   const pos = vigilarPosicion(); const vigilar = () => pos();
   mostrarMenuSenas(true);
@@ -445,7 +445,7 @@ async function protSalida() {
   decir('Andá a la marca S y mirá al avión.');
   // el compañero se queda revisando delante de la hélice: el alumno tiene que esperar a que se aleje
   T.modo = 'ir'; tutorIrA(enAvion(4.2, 0, 0.8), 1.2).catch(() => { });
-  await esperarQue(() => posAlumno().distanceTo(POS_SENALERO) < 1.4); estado.pos = true; lista();
+  guiaDestino = POS_SENALERO; await esperarQue(() => posAlumno().distanceTo(POS_SENALERO) < 1.4); guiaDestino = null; estado.pos = true; lista();
   const pos = vigilarPosicion(); mostrarMenuSenas(true);
   let tutorSeFue = false; esperar(9).then(async () => { decir('Listo, terminé de revisar adelante. Me voy a la punta del ala.', { hablar: true }); tutorAlAla(); await esperar(3); tutorSeFue = true; }).catch(() => { });
   decir('Tu compañero está revisando delante de la hélice. El encendido se da sólo con la zona de la hélice libre.');
@@ -531,13 +531,47 @@ $('volver').onclick = () => { $('salida').hidden = true; irA('intro'); };
 $('menu').onclick = () => abrirPausa();
 addEventListener('keydown', e => { if (e.code === 'Escape') pausado ? cerrarPausa(true) : abrirPausa(); });
 
+// ---------- guía de caminata: flechas luminosas en el piso desde el alumno hasta el próximo objetivo
+// (la marca S, o el objeto más cercano que hay que tocar: FOD, conos, equipo)
+let guiaDestino = null, guiaT = 0;
+const guia = (() => {
+  const sh = new THREE.Shape(); sh.moveTo(0, 0.32); sh.lineTo(0.32, -0.05); sh.lineTo(0.2, -0.15); sh.lineTo(0, 0.08); sh.lineTo(-0.2, -0.15); sh.lineTo(-0.32, -0.05); sh.lineTo(0, 0.32);
+  const geo = new THREE.ShapeGeometry(sh); geo.rotateX(-Math.PI / 2);   // queda en el piso apuntando a −z
+  const g = new THREE.Group(); g.name = 'guia'; const flechas = [];
+  for (let i = 0; i < 45; i++) { const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x3dff7a, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    m.renderOrder = 5; m.visible = false; g.add(m); flechas.push(m); }
+  const anillo = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.7, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3dff7a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  anillo.visible = false; g.add(anillo); escena.add(g);
+  return { flechas, anillo };
+})();
+function destinoGuia() {
+  if (guiaDestino) return guiaDestino.clone();
+  if (!puedeCaminar || !interactivos.length) return null;
+  const yo = posAlumno(); let mejor = null, dm = 1e9;
+  for (const it of interactivos) { if (!it.obj.visible) continue; const p = it.obj.getWorldPosition(new THREE.Vector3()); p.y = 0; const d = p.distanceTo(yo); if (d < dm) { dm = d; mejor = p; } }
+  return mejor;
+}
+function actualizarGuia(dt) {
+  guiaT += dt; const dest = destinoGuia(); const yo = posAlumno();
+  const ocultar = () => { guia.flechas.forEach(f => f.visible = false); guia.anillo.visible = false; };
+  if (!dest || pausado) return ocultar();
+  const dir = dest.clone().sub(yo); dir.y = 0; const d = dir.length();
+  guia.anillo.visible = true; guia.anillo.position.set(dest.x, 0.035, dest.z); const k = 1 + 0.15 * Math.sin(guiaT * 5); guia.anillo.scale.set(k, 1, k);
+  if (d < 1.6) { guia.flechas.forEach(f => f.visible = false); return; }
+  dir.normalize(); const yawF = Math.atan2(-dir.x, -dir.z), fase = (guiaT * 1.6) % 1;
+  guia.flechas.forEach((f, i) => { const s = 1.2 + (i + fase) * 1.1;
+    if (s > d - 0.9) { f.visible = false; return; }
+    f.visible = true; f.position.set(yo.x + dir.x * s, 0.03, yo.z + dir.z * s); f.rotation.set(0, yawF, 0);
+    f.material.opacity = 0.85 * Math.min(1, (s - 1.2) / 1.5 + 0.2) * Math.min(1, (d - 0.9 - s) / 1.5 + 0.25); });
+}
+
 // ---------- bucle
 const reloj = new THREE.Clock(); let velJuego = 1;   // (sólo para pruebas)
 renderer.setAnimationLoop(() => {
   const dt = Math.min(reloj.getDelta(), 0.05) * velJuego * (pausado ? 0 : 1); dtActual = dt;
   ambiente.actualizar(dt); actualizarAvion(dt); mirarAvion(senalero); senalero.userData.actualizar(dt); actualizarTutor(dt);
   if (renderer.xr.isPresenting) actualizarVR(dt); else moverPC(dt);
-  revisarPista(dt); revisarVigilantes();
+  revisarPista(dt); revisarVigilantes(); actualizarGuia(dt);
   renderer.setScissorTest(false); renderer.render(escena, camara);
   if (prevVisible && !renderer.xr.isPresenting) { preview.userData.actualizar(dt); const w = Math.min(170, innerWidth * 0.3), h = w * 1.33, x = innerWidth - w - 12, y = (contSenas.hidden ? 12 : 70);
     renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h); renderer.setScissorTest(true); renderer.autoClear = false; renderer.clearDepth(); renderer.render(escenaPrev, camPrev); renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight); }
