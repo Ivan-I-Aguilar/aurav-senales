@@ -79,11 +79,14 @@ function mirarAvion(p) { const c = enAvion(-1.7, 0, 0); p.lookAt(c.x, 0, c.z); }
 const T = { modo: 'ala', destino: null, vel: 1.6 };   // modo: 'ala' (acompaña en la punta del ala izquierda), 'ir' (camina a un punto), 'quieto'
 function tutorIrA(p, vel = 1.6) { T.modo = 'ir'; T.destino = p.clone(); T.vel = vel; return esperarQue(() => tutor.position.distanceTo(T.destino) < 0.15); }
 function tutorAlAla() { T.modo = 'ala'; }
+// el compañero de punta de ala acompaña sólo dentro de la plataforma: cuando el ala queda libre se separa y vuelve caminando
+function tutorSeQueda() { const p = tutor.position.clone(); p.z = Math.min(p.z, -24); p.x = Math.min(p.x, 10); T.modo = 'ir'; T.destino = p.add(new THREE.Vector3(0, 0, -2.5)); T.vel = 1.4; }
 function tutorAlAlaYa() { T.modo = 'ala'; tutor.position.copy(enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z)).setY(0); tutor.rotation.y = avion.rotation.y - Math.PI / 2; }
 const PUNTA_ALA = new THREE.Vector3(-0.8, 0, -11.2);
 function actualizarTutor(dt) {
   let dest = null, vel = T.vel;
-  if (T.modo === 'ala') { dest = enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z); dest.y = 0; vel = Math.max(1.6, A.v * 1.4); }
+  if (T.modo === 'ala') { dest = enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z); dest.y = 0; vel = Math.max(1.6, A.v * 1.4);
+    if (A.tr === SALIDA && A.s > 26) { tutorSeQueda(); dest = T.destino; vel = T.vel; } }
   if (T.modo === 'ir') dest = T.destino;
   let v = 0;
   if (dest) { const d = dest.clone().sub(tutor.position); d.y = 0; const L = d.length();
@@ -261,7 +264,8 @@ function actualizarVR(dt) {
     if (o.lado === 'left' && puedeCaminar) { const q = new THREE.Quaternion(); camara.getWorldQuaternion(q); const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q); f.y = 0; f.normalize(); const r = new THREE.Vector3(-f.z, 0, f.x);
       if (Math.hypot(ax[0], ax[1]) > 0.2) rig.position.addScaledVector(f, -ax[1] * 2 * dt).addScaledVector(r, ax[0] * 2 * dt); }
     if (o.lado === 'right') { if (Math.abs(ax[0]) > 0.7 && giroListo) { girarRig(-Math.sign(ax[0]) * Math.PI / 6); giroListo = false; } if (Math.abs(ax[0]) < 0.3) giroListo = true; }
-    const btn = gp.buttons[4]?.pressed; if (btn && !o.prev.b4 && modoSenas) abrirMenuVR(); o.prev.b4 = btn;
+    const btn = gp.buttons[4]?.pressed; if (btn && !o.prev.b4 && modoSenas && !pausado) abrirMenuVR(); o.prev.b4 = btn;
+    const b5 = gp.buttons[5]?.pressed; if (b5 && !o.prev.b5) { if (pausado) cerrarPausa(true); else { menuVRAbierto = false; abrirPausa(); } } o.prev.b5 = b5;
   }
   // reconocimiento de señas con las paletas
   if (modoSenas && epp.paletas && !panelVR.visible) {
@@ -300,8 +304,9 @@ async function intro() {
   reiniciarMundo(); faseTitulo('Señaleros de plataforma'); ponerAvion(LLEGADA, PARADA); A.motor = false; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true);
   teletransportar(POS_SENALERO.x - 3.5, POS_SENALERO.z - 3, enAvion(0, 0, 0)); senalero.userData.hacer('saludo');
   const r = await preguntar('Señaleros de plataforma', 'Curso de Personal de Rampa · AAXOD\n\nPrimero vas a OBSERVAR cómo un señalero guía la llegada y la salida de un AT-802. Después vas a ser el PROTAGONISTA: te ponés el equipo, controlás el FOD, te parás a 32 m de la nariz y guiás al piloto.\n\nEn Quest los controles son tus paletas. En PC o celular elegís las señas en el menú de abajo.',
-    [{ id: 'empezar', texto: 'Empezar' }, { id: 'elegir', texto: 'Ir a una fase', secundario: true }]);
+    [{ id: 'empezar', texto: 'Empezar desde el principio' }, { id: 'practica', texto: 'Ir directo a la práctica' }, { id: 'elegir', texto: 'Ir a una fase', secundario: true }]);
   audio.reanudar();
+  if (r === 'practica') return 'equipo';
   if (r === 'elegir') { const f = await preguntar('Ir a una fase', '', [{ id: 'obsLlegada', texto: '1 · Observar llegada' }, { id: 'obsSalida', texto: '2 · Observar salida' }, { id: 'equipo', texto: '3 · Equipo de protección' }, { id: 'protLlegada', texto: '4 · Guiar la llegada' }, { id: 'protSalida', texto: '5 · Guiar la salida' }]); return f; }
   return 'obsLlegada';
 }
@@ -346,7 +351,8 @@ async function obsSalida() {
   decir('«Todo despejado»: el señalero confirma que no hay obstáculos.'); await senaObs('todoDespejado', 3.5);
   decir('«Avanzar».'); await senaObs('avanzar'); moverAvion(12, 2); await esperarQue(() => A.s >= 11.6);
   decir('«Giro a la derecha», hacia la pista.'); await senaObs('giroDerecha'); moverAvion(21.4, 1.5); await esperarQue(() => A.s >= 21);
-  decir('«Avanzar» y el avión sale hacia la pista. El compañero de punta de ala acompaña hasta que el ala queda libre de obstáculos.'); await senaObs('avanzar'); moverAvion(SALIDA.largo, 3);
+  decir('«Avanzar» y el avión sale hacia la pista. El compañero de punta de ala acompaña hasta que el ala queda libre de obstáculos y ahí se separa.'); await senaObs('avanzar'); moverAvion(SALIDA.largo, 3);
+  await esperarQue(() => A.s >= 24); tutorSeQueda();
   await esperar(5); senalero.userData.hacer('saludo'); rotulo('Señalero: despedida'); await esperar(4);
   return await preguntar('Salida observada', 'Ahora te toca a vos. Primero te vas a poner el equipo de protección.', [{ id: 'equipo', texto: 'Continuar' }, { id: 'obsSalida', texto: 'Repetir', secundario: true }]);
 }
@@ -453,6 +459,7 @@ async function protSalida() {
   await paso('avanzar', 'Que avance hacia vos.'); moverAvion(12, 2); await esperarQue(() => { pos(); return A.s >= 11.8 && A.v < 0.05; });
   await paso('giroDerecha', 'Tiene que girar hacia la pista.'); moverAvion(21.4, 1.5); await esperarQue(() => { pos(); return A.s >= 21.3 && A.v < 0.05; });
   await paso('avanzar', 'Despedilo: que siga hacia la pista.'); moverAvion(SALIDA.largo, 3); estado.salida = true; lista(); mostrarMenuSenas(false);
+  await esperarQue(() => A.s >= 24); tutorSeQueda(); decir('El ala ya pasó los obstáculos: tu compañero se separa y el avión sigue solo.', { hablar: false });
   decir('¡Salida completa! El piloto sigue por su cuenta hacia la pista.'); await esperar(6);
   return 'resultado';
 }
@@ -490,13 +497,44 @@ async function correr(nombre) {
     try { const sig = await FASES[nombre](); if (tok !== corrida) return; nombre = sig || 'intro'; if (nombre === 'protLlegada') RES.inicio = 0; }
     catch (e) { if (e instanceof Corte) return; console.error(e); return; } }
 }
-function irA(nombre) { esperada = null; alResolver = null; $('panel').hidden = true; panelVR.ocultar(); correr(nombre); }
-$('menu').onclick = () => irA('intro');
+function irA(nombre) { cerrarPausa(false); esperada = null; alResolver = null; preguntaActual = null; $('panel').hidden = true; $('nombre-cert').hidden = true; constancia.ocultar(); panelVR.ocultar(); menuVRAbierto = false;
+  if ('speechSynthesis' in window) speechSynthesis.cancel(); correr(nombre); }
+
+// ---------- menú de pausa: continuar, reiniciar, ir a la práctica, inicio, salir (botón «Menú»; en Quest, botón B/Y)
+let pausado = false;
+const OPC_PAUSA = [{ id: 'continuar', texto: 'Continuar' }, { id: 'reiniciarFase', texto: 'Reiniciar esta parte' }, { id: 'practica', texto: 'Ir a la práctica' },
+  { id: 'inicio', texto: 'Reiniciar el juego' }, { id: 'salir', texto: 'Salir del juego' }];
+function abrirPausa() {
+  if (pausado || $('salida').hidden === false) return; pausado = true; if ('speechSynthesis' in window) speechSynthesis.pause();
+  const elegir = id => { cerrarPausa(id === 'continuar');
+    if (id === 'reiniciarFase') irA(faseActual === 'resultado' ? 'protLlegada' : faseActual);
+    if (id === 'practica') irA('equipo');
+    if (id === 'inicio') irA('intro');
+    if (id === 'salir') salirDelJuego(); };
+  if (renderer.xr.isPresenting) { panelVR.mostrar({ titulo: 'Pausa', texto: 'El juego está detenido. Elegí una opción.', botones: OPC_PAUSA }, elegir, camara); return; }
+  const cont = $('pausa-botones'); cont.innerHTML = '';
+  for (const b of OPC_PAUSA) { const e = document.createElement('button'); e.textContent = b.texto; if (b.id === 'salir') e.className = 'sec'; e.onclick = () => elegir(b.id); cont.appendChild(e); }
+  $('pausa').hidden = false;
+}
+function cerrarPausa(reanudar = true) {
+  if (!pausado) return; pausado = false; $('pausa').hidden = true; panelVR.ocultar();
+  if ('speechSynthesis' in window) { if (reanudar) speechSynthesis.resume(); else speechSynthesis.cancel(); }
+  if (reanudar && preguntaActual && renderer.xr.isPresenting) panelVR.mostrar(preguntaActual, preguntaActual.fin, camara);
+}
+async function salirDelJuego() {
+  corrida++; esperada = null; alResolver = null; preguntaActual = null; $('panel').hidden = true; mostrarMenuSenas(false); tareas(null); rotulo(''); decir('');
+  A.motor = false; if (motorSonido.isPlaying) motorSonido.stop(); if ('speechSynthesis' in window) speechSynthesis.cancel();
+  const s = renderer.xr.getSession(); if (s) try { await s.end(); } catch { }
+  $('salida').hidden = false;
+}
+$('volver').onclick = () => { $('salida').hidden = true; irA('intro'); };
+$('menu').onclick = () => abrirPausa();
+addEventListener('keydown', e => { if (e.code === 'Escape') pausado ? cerrarPausa(true) : abrirPausa(); });
 
 // ---------- bucle
 const reloj = new THREE.Clock(); let velJuego = 1;   // (sólo para pruebas)
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(reloj.getDelta(), 0.05) * velJuego; dtActual = dt;
+  const dt = Math.min(reloj.getDelta(), 0.05) * velJuego * (pausado ? 0 : 1); dtActual = dt;
   ambiente.actualizar(dt); actualizarAvion(dt); mirarAvion(senalero); senalero.userData.actualizar(dt); actualizarTutor(dt);
   if (renderer.xr.isPresenting) actualizarVR(dt); else moverPC(dt);
   revisarPista(dt); revisarVigilantes();
@@ -505,5 +543,5 @@ renderer.setAnimationLoop(() => {
     renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h); renderer.setScissorTest(true); renderer.autoClear = false; renderer.clearDepth(); renderer.render(escenaPrev, camPrev); renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight); }
 });
 addEventListener('resize', () => { camara.aspect = innerWidth / innerHeight; camara.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
-window.__senales = { constancia, set vel(v) { velJuego = v; }, get esperada() { return esperada; }, A, avion, senalero, tutor, irA, sena: id => senaDelAlumno(id), get fase() { return faseActual; }, fods: () => fods, conos, fantasmas, teletransportar, rig, camara, epp, mesaEPP, tocarObj: o => { const it = interactivos.find(i => i.obj === o); if (it) it.alTocar(it); }, interactivos: () => interactivos, errores: () => errores, POS_SENALERO, detector, RES, panel: id => { const b = [...document.querySelectorAll('#panel-botones button')].find(x => x.textContent.includes(id)); b?.click(); } };
+window.__senales = { constancia, abrirPausa, get pausado() { return pausado; }, set vel(v) { velJuego = v; }, get esperada() { return esperada; }, A, avion, senalero, tutor, irA, sena: id => senaDelAlumno(id), get fase() { return faseActual; }, fods: () => fods, conos, fantasmas, teletransportar, rig, camara, epp, mesaEPP, tocarObj: o => { const it = interactivos.find(i => i.obj === o); if (it) it.alTocar(it); }, interactivos: () => interactivos, errores: () => errores, POS_SENALERO, detector, RES, panel: id => { const b = [...document.querySelectorAll('#panel-botones button')].find(x => x.textContent.includes(id)); b?.click(); } };
 correr('intro');

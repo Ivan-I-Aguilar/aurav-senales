@@ -41,6 +41,13 @@
   #panel-botones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
   #panel-botones button { background: var(--tinta); color: #fff; font-weight: bold; }
   #panel-botones button.sec { background: #e3edf3; color: var(--tinta); font-weight: normal; }
+  #pausa, #salida { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8,36,64,.55); z-index: 4; }
+  #salida { background: #082440; }
+  #pausa .caja, #salida .caja { background: #fff; color: var(--tinta); border-radius: 18px; padding: 22px 24px; width: min(360px, calc(100vw - 32px)); text-align: center; }
+  #pausa h2, #salida h2 { margin: 0 0 4px; } .sub { color: #55606a; font-size: 14px; margin-bottom: 14px; }
+  #pausa-botones { display: flex; flex-direction: column; gap: 8px; }
+  #pausa-botones button, #volver { background: var(--tinta); color: #fff; font-weight: bold; padding: 11px; }
+  #pausa-botones button.sec { background: #e3edf3; color: var(--tinta); }
   #cargando { position: fixed; inset: 0; display: grid; place-items: center; background: #082440; color: #fff; font-size: 18px; z-index: 5; }
   #ayuda { position: fixed; left: 12px; top: 52px; color: var(--tinta); background: rgba(255,255,255,.7); padding: 3px 8px; border-radius: 8px; font-size: 11px; }
   @media (max-width: 640px) { #tareas { top: auto; bottom: 150px; font-size: 12px; max-width: 46vw; } #tutor { font-size: 13px; max-width: calc(100vw - 24px); bottom: 64px; } #cartel { top: 92px; font-size: 13px; } #mi-sena { bottom: 250px; } #ayuda { display: none; } }
@@ -54,16 +61,18 @@
   <span class="sep"></span>
   <button id="cabina" class="chico" hidden>Ver desde la cabina</button>
   <button id="voz" class="chico">Voz: sí</button>
-  <button id="menu" class="chico">Inicio</button>
+  <button id="menu" class="chico">Menú</button>
   <button id="entrar-vr" hidden>Entrar en VR</button>
 </div>
-<div id="ayuda">Arrastrá para mirar · WASD o tocá el piso para caminar · tocá los objetos para interactuar</div>
+<div id="ayuda">Arrastrá para mirar · WASD o tocá el piso para caminar · tocá los objetos · Esc: menú</div>
 <div id="cartel" hidden></div>
 <ul id="tareas" hidden></ul>
 <div id="tutor" hidden><b>COMPAÑERO DE PUNTA DE ALA</b><span id="tutor-texto"></span></div>
 <div id="mi-sena" hidden></div>
 <div id="senas" hidden></div>
 <div id="panel" hidden><div class="caja"><h2 id="panel-titulo"></h2><div id="panel-texto"></div><label id="nombre-cert" hidden>Nombre para el certificado<input id="nombre-input" maxlength="40" placeholder="Nombre y apellido"></label><div id="panel-botones"></div></div></div>
-<script type="module" src="./main.js?v=20261008b"></script>
+<div id="pausa" hidden><div class="caja"><h2>Pausa</h2><div class="sub">El juego está detenido.</div><div id="pausa-botones"></div></div></div>
+<div id="salida" hidden><div class="caja"><h2>Saliste del juego</h2><div class="sub">Gracias por practicar. Ya podés cerrar esta pestaña.</div><button id="volver">Volver a entrar</button></div></div>
+<script type="module" src="./main.js?v=20261008c"></script>
 </body>
 </html>
