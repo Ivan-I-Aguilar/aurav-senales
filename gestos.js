@@ -13,10 +13,10 @@ export const GRUPOS = [['paradaNormal', 'paradaEmergencia'], ['retirarCalzas', '
 const grupo = id => GRUPOS.find(g => g.includes(id)) || [id];
 // Tolerancia (Iván probó en Quest, 8/10: «ser menos estrictos»): umbral amplio, menos peso a la inclinación de la paleta y
 // menos tiempo sostenido. Cuando hay una seña esperada, alcanza con parecerse a ésa (no hace falta que sea la mejor de todas).
-const UMBRAL = 0.8;           // radianes promedio (brazo + paleta, dos manos)
-const UMBRAL_ESPERADA = 1.0;
-const SOSTENER = 0.6;         // segundos acumulados de coincidencia
-const MOVIMIENTO = 0.1;       // metros que tienen que recorrer las puntas en las señas con movimiento
+const UMBRAL = 0.9;           // radianes promedio (brazo + paleta, dos manos)
+const UMBRAL_ESPERADA = 1.25;   // (2.ª prueba en Quest: «menos estrictos»)
+const SOSTENER = 0.45;        // segundos acumulados de coincidencia
+const MOVIMIENTO = 0.06;      // metros que tienen que recorrer las puntas en las señas con movimiento
 
 // muestras de cada seña: [{ d: [c, p], i: [c, p] }]
 const MUESTRAS = {};
@@ -31,7 +31,7 @@ for (const [id, s] of Object.entries(SENAS)) {
 }
 
 export function crearDetector() {
-  const acum = {}; let historial = [];   // posiciones de manos para medir movimiento
+  const acum = {}; let historial = []; let ultima = null;   // posiciones de manos para medir movimiento
   const fw = new THREE.Vector3(), der = new THREE.Vector3(), hombro = new THREE.Vector3(), v = new THREE.Vector3(), w = new THREE.Vector3();
   const aCuerpo = (vec, out) => out.set(-vec.dot(der), vec.y, vec.dot(fw));   // mundo → marco del cuerpo
 
@@ -47,10 +47,11 @@ export function crearDetector() {
       aCuerpo(v.set(0, 0, -1).applyQuaternion(m.quat), w); const p = w.clone().normalize();
       med[k] = [c, p];
     }
+    ultima = med;
     const out = {};
     for (const [id, arr] of Object.entries(MUESTRAS)) {
       let mejor = 9;
-      for (const m of arr) { let e = 0; for (const k of ['d', 'i']) e += med[k][0].angleTo(m[k][0]) + 0.35 * med[k][1].angleTo(m[k][1]); e /= 2.7; if (e < mejor) mejor = e; }
+      for (const m of arr) { let e = 0; for (const k of ['d', 'i']) e += med[k][0].angleTo(m[k][0]) + 0.15 * med[k][1].angleTo(m[k][1]); e /= 2.3; /* casi todo el peso en la posición de los brazos */ if (e < mejor) mejor = e; }
       out[id] = mejor;
     }
     return out;
@@ -65,9 +66,11 @@ export function crearDetector() {
       historial.push([punta(manos.d), punta(manos.i)]); if (historial.length > 60) historial.shift();
       let mov = 0; if (historial.length > 10) { for (const k of [0, 1]) { const b = new THREE.Box3(); historial.forEach(h => b.expandByPoint(h[k])); mov = Math.max(mov, b.getSize(new THREE.Vector3()).length()); } }
       let mejor = null, e = 9; for (const [id, x] of Object.entries(p)) if (x < e) { e = x; mejor = id; }
+      // brazos colgando en reposo no cuentan como seña: al menos un brazo tiene que separarse ~20° de la vertical
+      const abajo = new THREE.Vector3(0, -1, 0); const activo = ultima ? Math.max(...['d', 'i'].map(k => ultima[k][0].angleTo(abajo))) > 0.35 : true;
       const esp = esperada ? grupo(esperada) : null;
       for (const id of Object.keys(p)) {
-        const seMueve = ESTATICAS.has(id) || mov > MOVIMIENTO;
+        const seMueve = activo && (ESTATICAS.has(id) || mov > MOVIMIENTO);
         const ok = esp ? (esp.includes(id) && Math.min(...esp.map(x => p[x])) < UMBRAL_ESPERADA && seMueve)
                        : (grupo(mejor).includes(id) && p[mejor] < UMBRAL && seMueve);
         acum[id] = ok ? (acum[id] || 0) + dt : Math.max(0, (acum[id] || 0) - dt);

@@ -11,7 +11,7 @@ import { crearAT802GLB } from './at802glb.js?v=20261008a';
 import { crearSenaleroGLB, crearSenalero, SENAS, ORDEN_CURSO } from './senalero.js?v=20261008b';
 import { crearPlataforma, colocarCarteles, crearTachoFOD, crearCartel, estacionarAviones, crearCono, crearCalza, crearFOD, crearEPP, crearPaleta,
   PUESTO, POS_SENALERO, POS_SALIDA, SALIDA_GIRO, SALIDA_FIN_GIRO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261008e';
-import { crearDetector } from './gestos.js?v=20261008c';
+import { crearDetector } from './gestos.js?v=20261008d';
 import { crearPanelVR } from './panelvr.js?v=20261008b';
 import { crearAudio } from './audio.js?v=20261008a';
 import { Constancia } from './constancia.js?v=20261008c';
@@ -216,7 +216,8 @@ function guiaSena(id) {
 // ---------- detección de gestos (VR)
 const detector = crearDetector();
 const controles = [0, 1].map(i => { const c = renderer.xr.getController(i), g = renderer.xr.getControllerGrip(i); rig.add(c); rig.add(g);
-  const pal = crearPaleta(); pal.rotation.x = Math.PI / 2;   // la punta (−y de la paleta) queda hacia −z del grip: sale por arriba del puño (antes quedaba invertida) pal.position.z = 0.02; pal.visible = false; g.add(pal);   // la paleta sale hacia −z del grip
+  // paleta: sale del control hacia donde apunta (−z del espacio del rayo), como una baliza que se sostiene con el puño hacia adelante
+  const pal = crearPaleta(); pal.rotation.x = Math.PI / 2; pal.position.set(0, -0.01, 0.03); pal.visible = false; c.add(pal);
   const rayo = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({ color: 0xc8e63a })); rayo.scale.z = 5; rayo.visible = false; c.add(rayo);
   const o = { c, g, pal, rayo, lado: null, fuente: null, prev: {} };
   c.addEventListener('connected', e => { o.lado = e.data.handedness; o.fuente = e.data; });
@@ -291,7 +292,7 @@ function actualizarVR(dt) {
   if (modoSenas && epp.paletas && !panelVR.visible) {
     const d = manoVR('right'), i = manoVR('left');
     if (d && i) { const cab = { pos: new THREE.Vector3(), quat: new THREE.Quaternion() }; camara.getWorldPosition(cab.pos); camara.getWorldQuaternion(cab.quat);
-      const mano = o => ({ pos: new THREE.Vector3().setFromMatrixPosition(o.g.matrixWorld), quat: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().extractRotation(o.g.matrixWorld)) });
+      const mano = o => ({ pos: new THREE.Vector3().setFromMatrixPosition(o.c.matrixWorld), quat: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().extractRotation(o.c.matrixWorld)) });   // misma orientación que la paleta dibujada
       const r = detector.evaluar(cab, { d: mano(d), i: mano(i) }, dt, esperada?.[0]); if (r.reconocida) senaDelAlumno(r.reconocida, 'gesto'); }
   }
   cartelVR.poner(textoTutor, ultimoRotulo);
