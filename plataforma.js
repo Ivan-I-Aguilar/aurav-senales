@@ -137,3 +137,44 @@ export function crearPaleta() {
   const pt = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 8), mat(0xffe7d0, { emissive: 0x332211 })); pt.position.y = -0.42; p.add(pt);
   return p;
 }
+
+// --- Señalética vertical: carteles sobre poste (doble faz), estilo carteles de plataforma (letras amarillas sobre negro)
+export function crearCartel(lineas, { ancho = 1.6, alto = 0.8, altura = 2.0, fondo = '#111111', color = '#f2c200', borde = '#f2c200' } = {}) {
+  const g = new THREE.Group(); g.name = 'cartel';
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = Math.round(512 * alto / ancho); const c = cv.getContext('2d');
+  c.fillStyle = fondo; c.fillRect(0, 0, cv.width, cv.height); c.strokeStyle = borde; c.lineWidth = 12; c.strokeRect(10, 10, cv.width - 20, cv.height - 20);
+  const ls = Array.isArray(lineas) ? lineas : [lineas]; const h = (cv.height - 40) / ls.length;
+  c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'middle';
+  ls.forEach((l, i) => { const grande = i === 0; let fs = Math.min(h * (grande ? 0.8 : 0.55), 150); c.font = `bold ${fs}px Arial`; while (c.measureText(l).width > cv.width - 50 && fs > 12) { fs -= 2; c.font = `bold ${fs}px Arial`; } c.fillText(l, cv.width / 2, 20 + h * (i + 0.5)); });
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  const caja = new THREE.Mesh(new THREE.BoxGeometry(ancho + 0.06, alto + 0.06, 0.06), mat(0x2a2d31)); caja.position.y = altura; g.add(caja);
+  for (const s of [1, -1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(ancho, alto), new THREE.MeshBasicMaterial({ map: t, toneMapped: false })); p.position.set(0, altura, 0.032 * s); if (s < 0) p.rotation.y = Math.PI; g.add(p); }
+  for (const x of [-ancho * 0.35, ancho * 0.35]) { const poste = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, altura - alto / 2, 10), mat(0x9aa0a6, { metalness: 0.6, roughness: 0.4 })); poste.position.set(x, (altura - alto / 2) / 2, 0); g.add(poste); }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
+// Carteles de los puestos de estacionamiento y de la posición del señalero
+export function colocarCarteles(escena) {
+  const poner = (c, x, z, rotY) => { c.position.set(x, 0, z); c.rotation.y = rotY; escena.add(c); return c; };
+  // puesto de la práctica (P3): a la derecha de la cabecera, mirando al avión que llega por la calle de rodaje
+  poner(crearCartel(['P3', 'PUESTO AT-802'], { ancho: 1.4, alto: 1.0, altura: 2.2 }), 5.5, PUESTO.z - 5, Math.PI * 0.15);
+  // puestos de los estacionados
+  [['P1', -43, -16], ['P2', -23, -16], ['P4', -23, -36], ['P5', -43, -36]].forEach(([id, x, z]) => poner(crearCartel([id], { ancho: 1.0, alto: 0.8, altura: 2.0 }), x + 9.8, z - 5.5, 0));
+  // posición del señalero (marca S)
+  poner(crearCartel(['S', 'SEÑALERO', '32 m de la nariz'], { ancho: 1.2, alto: 1.1, altura: 2.0, fondo: '#f2c200', color: '#111111', borde: '#111111' }), POS_SENALERO.x + 2.6, POS_SENALERO.z - 0.6, 0);
+}
+
+// Tacho de FOD: los objetos levantados se tiran en un recipiente identificado «FOD» (práctica que pidió Iván, 8/10)
+export function crearTachoFOD() {
+  const g = new THREE.Group(); g.name = 'tacho-fod';
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128; const c = cv.getContext('2d');
+  c.fillStyle = '#f2c200'; c.fillRect(0, 0, 512, 128); c.fillStyle = '#111'; c.font = 'bold 96px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (const x of [128, 384]) c.fillText('FOD', x, 68);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  const cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.8, 24, 1, true), mat(0xc0171d, { side: THREE.DoubleSide, roughness: 0.6 })); cuerpo.position.y = 0.42; g.add(cuerpo);
+  const fondo = new THREE.Mesh(new THREE.CircleGeometry(0.26, 24).rotateX(-Math.PI / 2), mat(0x222222)); fondo.position.y = 0.03; g.add(fondo);
+  const banda = new THREE.Mesh(new THREE.CylinderGeometry(0.302, 0.29, 0.26, 24, 1, true), new THREE.MeshStandardMaterial({ map: t, roughness: 0.6 })); banda.position.y = 0.52; g.add(banda);
+  const aro = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.02, 8, 24).rotateX(Math.PI / 2), mat(0x222222)); aro.position.y = 0.82; g.add(aro);
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}

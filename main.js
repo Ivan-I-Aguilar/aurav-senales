@@ -9,8 +9,8 @@ import { GLTFLoader } from './GLTFLoader.js?v=20261008a';
 import { crearEscenario } from './escenario.js?v=20261008a';
 import { crearAT802GLB } from './at802glb.js?v=20261008a';
 import { crearSenaleroGLB, crearSenalero, SENAS, ORDEN_CURSO } from './senalero.js?v=20261008b';
-import { crearPlataforma, estacionarAviones, crearCono, crearCalza, crearFOD, crearEPP, crearPaleta,
-  PUESTO, POS_SENALERO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261008b';
+import { crearPlataforma, colocarCarteles, crearTachoFOD, crearCartel, estacionarAviones, crearCono, crearCalza, crearFOD, crearEPP, crearPaleta,
+  PUESTO, POS_SENALERO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261008d';
 import { crearDetector } from './gestos.js?v=20261008b';
 import { crearPanelVR } from './panelvr.js?v=20261008b';
 import { crearAudio } from './audio.js?v=20261008a';
@@ -103,7 +103,15 @@ const conos = CONOS_DIAMANTE.map(() => { const c = crearCono(); c.visible = fals
 const fantasmas = CONOS_DIAMANTE.map(() => { const c = crearCono(); c.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; o.castShadow = false; } }); c.visible = false; escena.add(c); return c; });
 function ubicarConos() { CONOS_DIAMANTE.forEach(([x, z], i) => { const p = enAvion(x, 0, z); p.y = 0; conos[i].position.copy(p); fantasmas[i].position.copy(p); }); }
 const mesaEPP = crearEPP(); mesaEPP.position.set(POS_SENALERO.x - 4.5, 0, POS_SENALERO.z - 2.5); mesaEPP.rotation.y = 0.4; escena.add(mesaEPP);
+colocarCarteles(escena);
+{ const c = crearCartel(['EPP', 'EQUIPO DE PROTECCIÓN'], { ancho: 1.3, alto: 0.75, altura: 1.9, fondo: '#c8e63a', color: '#111111', borde: '#111111' }); c.position.copy(mesaEPP.position).add(new THREE.Vector3(-1.2, 0, -0.9)); c.rotation.y = 0.4; escena.add(c); }
 let fods = [];
+// tachos de FOD: uno junto a la marca S y otro al costado del puesto P3
+const tachos = [[POS_SENALERO.x + 3.2, POS_SENALERO.z + 3.5], [PUESTO.x - 6.5, PUESTO.z - 10]].map(([x, z]) => { const t = crearTachoFOD(); t.position.set(x, 0, z); escena.add(t); return t; });
+const tachoCercano = p => tachos.reduce((a, b) => (a.position.distanceTo(p) <= b.position.distanceTo(p) ? a : b));
+function tirarEnTacho() {   // el alumno lleva el FOD juntado hasta un tacho y lo tira
+  return new Promise(res => { interactivos = tachos.map(t => ({ obj: t, alcanceExtra: 0.5, alTocar: () => { interactivos = []; audio.ok(); decir('FOD descartado en el tacho.', { hablar: false }); res(); } })); });
+}
 function sembrarFOD(lista) { fods.forEach(f => escena.remove(f)); fods = lista.map(([tipo, x, z]) => { const f = crearFOD(tipo); f.position.set(x, 0, z); f.rotation.y = x * 3.1; escena.add(f); return f; }); }
 
 // ---------- protagonista: posición, EPP, paletas en VR
@@ -239,8 +247,8 @@ function moverPC(dt) {
   camara.position.y = ALTURA_OJOS; if (!puedeCaminar) return;
   const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), r = new THREE.Vector3(-f.z, 0, f.x), m = new THREE.Vector3();
   if (teclas.KeyW || teclas.ArrowUp) m.add(f); if (teclas.KeyS || teclas.ArrowDown) m.sub(f); if (teclas.KeyD || teclas.ArrowRight) m.add(r); if (teclas.KeyA || teclas.ArrowLeft) m.sub(r);
-  if (m.lengthSq() > 0) { caminarA = null; rig.position.addScaledVector(m.normalize(), 2.2 * dt); }
-  if (caminarA) { const d = caminarA.clone().sub(rig.position); d.y = 0; const L = d.length(); if (L < 0.1) caminarA = null; else rig.position.addScaledVector(d.normalize(), Math.min(L, 2.6 * dt)); }
+  if (m.lengthSq() > 0) { caminarA = null; rig.position.addScaledVector(m.normalize(), 3.0 * dt); }
+  if (caminarA) { const d = caminarA.clone().sub(rig.position); d.y = 0; const L = d.length(); if (L < 0.1) caminarA = null; else rig.position.addScaledVector(d.normalize(), Math.min(L, 3.2 * dt)); }
 }
 $('cabina').onclick = () => { vistaCabina = !vistaCabina; $('cabina').classList.toggle('activa', vistaCabina); if (vistaCabina) { yaw = 0; pitch = -0.08; } else { teletransportar(rig.position.x, rig.position.z); vistaObservador(); } };
 function vistaObservador() { teletransportar(POS_SENALERO.x - 3.5, POS_SENALERO.z - 3, enAvion(0, 0, 0)); }
@@ -262,7 +270,7 @@ function actualizarVR(dt) {
     const gp = o.fuente?.gamepad; if (!gp) continue;
     const ax = gp.axes.length >= 4 ? [gp.axes[2], gp.axes[3]] : [gp.axes[0], gp.axes[1]];
     if (o.lado === 'left' && puedeCaminar) { const q = new THREE.Quaternion(); camara.getWorldQuaternion(q); const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q); f.y = 0; f.normalize(); const r = new THREE.Vector3(-f.z, 0, f.x);
-      if (Math.hypot(ax[0], ax[1]) > 0.2) rig.position.addScaledVector(f, -ax[1] * 2 * dt).addScaledVector(r, ax[0] * 2 * dt); }
+      if (Math.hypot(ax[0], ax[1]) > 0.2) rig.position.addScaledVector(f, -ax[1] * 2.6 * dt).addScaledVector(r, ax[0] * 2.6 * dt); }
     if (o.lado === 'right') { if (Math.abs(ax[0]) > 0.7 && giroListo) { girarRig(-Math.sign(ax[0]) * Math.PI / 6); giroListo = false; } if (Math.abs(ax[0]) < 0.3) giroListo = true; }
     const btn = gp.buttons[4]?.pressed; if (btn && !o.prev.b4 && modoSenas && !pausado) abrirMenuVR(); o.prev.b4 = btn;
     const b5 = gp.buttons[5]?.pressed; if (b5 && !o.prev.b5) { if (pausado) cerrarPausa(true); else { menuVRAbierto = false; abrirPausa(); } } o.prev.b5 = b5;
@@ -341,7 +349,8 @@ async function obsSalida() {
   ponerAvion(SALIDA, 0); A.motor = false; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true); vistaObservador();
   sembrarFOD([['piedra', 3, -10], ['precinto', -1.2, -12], ['tornillo', 6.5, -19]]);
   decir('Antes de la salida: control de FOD. Cualquier objeto suelto puede ser aspirado por el motor o despedido por la hélice.');
-  T.modo = 'ir'; for (const f of [...fods]) { await tutorIrA(f.position.clone().add(new THREE.Vector3(0.5, 0, 0.5))); f.visible = false; audio.ok(); } await esperar(0.5);
+  T.modo = 'ir'; for (const f of [...fods]) { await tutorIrA(f.position.clone().add(new THREE.Vector3(0.5, 0, 0.5))); f.visible = false; audio.ok(); }
+  decir('Lo que se junta no se guarda en el bolsillo: se tira en el tacho identificado «FOD».'); { const t = tachoCercano(tutor.position); await tutorIrA(t.position.clone().add(new THREE.Vector3(0.6, 0, 0.6))); audio.ok(); } await esperar(1);
   decir('Después se retiran los conos del diamante, para dejar libre el camino.');
   for (const c of conos) { await tutorIrA(c.position.clone().add(new THREE.Vector3(0.6, 0, 0))); c.visible = false; audio.aviso(); }
   tutorAlAla(); await esperarQue(() => tutor.position.distanceTo(enAvion(PUNTA_ALA.x, 0, PUNTA_ALA.z).setY(0)) < 0.3);
@@ -375,12 +384,12 @@ async function protLlegada() {
   ponerAvion(LLEGADA, 0); A.motor = true; A.rpm = 1; tutorAlAlaYa(); RES.inicio = performance.now(); errores = []; RES.errLlegada = null; RES.parada = null; RES.reaccion = null;
   teletransportar(mesaEPP.position.x + 0.5, mesaEPP.position.z + 1.8, POS_SENALERO); puedeCaminar = true;
   // 1) FOD en el puesto
-  sembrarFOD([['tornillo', 0.8, 5], ['trapo', -2.4, -0.5], ['lata', 1.5, -7.5], ['botella', -0.6, -14]]);
-  const lista = () => tareas([[`Revisar el puesto: FOD (${fods.filter(f => !f.visible).length}/${fods.length})`, fods.every(f => !f.visible)], ['Pararte en la marca S (32 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
+  sembrarFOD([['tornillo', 0.8, -12], ['trapo', -2.2, -18], ['lata', 1.6, -24], ['botella', -0.8, -30]]);
+  const lista = () => tareas([[`Levantar el FOD y tirarlo en el tacho (${fods.filter(f => !f.visible).length}/${fods.length})`, fods.every(f => !f.visible)], ['Pararte en la marca S (32 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
   lista();
-  decir('El AT-802 está por llegar al puesto P3. Antes, caminá el puesto y levantá todo el FOD que encuentres sobre la línea amarilla. Hay cuatro objetos. Tocá cada uno cuando estés cerca.');
-  interactivos = fods.map(f => ({ obj: f, alTocar: it => { f.visible = false; audio.ok(); interactivos = interactivos.filter(x => x !== it); lista(); const q = fods.filter(x => x.visible).length; decir(q ? `Bien. Quedan ${q}.` : 'Puesto limpio. Ahora andá a la marca S.', { hablar: !q }); } }));
-  await esperarQue(() => fods.every(f => !f.visible)); interactivos = [];
+  decir('El AT-802 está por llegar al puesto P3. Antes, recorré la zona entre tu posición y el puesto P3 y levantá todo el FOD que encuentres. Hay cuatro objetos. Tocá cada uno cuando estés cerca.');
+  interactivos = fods.map(f => ({ obj: f, alTocar: it => { f.visible = false; audio.ok(); interactivos = interactivos.filter(x => x !== it); lista(); const q = fods.filter(x => x.visible).length; decir(q ? `Bien. Quedan ${q}.` : 'Juntaste todo. Según la reglamentación, el FOD se tira en un tacho identificado «FOD»: llevalo al tacho más cercano.'); } }));
+  await esperarQue(() => fods.every(f => !f.visible)); await tirarEnTacho();
   // 2) posición
   tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
   decir('Andá a la marca S, a 32 metros de donde va a quedar la nariz. Desde ahí el piloto te ve todo el tiempo. Mirá hacia el avión.');
@@ -420,9 +429,10 @@ async function protLlegada() {
   // 5) diamante
   tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', true], ['Guiar al avión hasta la barra de parada', true], ['Armar el diamante de seguridad (0/5)', false]]);
   await esperarQue(() => A.rpm < 0.15);
-  decir('Motor detenido. Armá el diamante de seguridad: caminá hasta cada cono transparente y tocalo para colocarlo. Nariz, puntas de ala y dos en la cola.');
+  teletransportar(PUESTO.x - 5, PUESTO.z - 9, enAvion(-2, 0, 0));
+  decir('Motor detenido. Te acercás al avión. Armá el diamante de seguridad: caminá hasta cada cono transparente y tocalo para colocarlo. Nariz, puntas de ala y dos en la cola.');
   ubicarConos(); let puestos = 0; fantasmas.forEach(f => f.visible = true);
-  interactivos = fantasmas.map((f, i) => ({ obj: f, alTocar: it => { f.visible = false; conos[i].visible = true; puestos++; audio.ok(); interactivos = interactivos.filter(x => x !== it);
+  interactivos = fantasmas.map((f, i) => ({ obj: f, alcanceExtra: 2.5, alTocar: it => { f.visible = false; conos[i].visible = true; puestos++; audio.ok(); interactivos = interactivos.filter(x => x !== it);
     tareas([['Revisar el puesto: FOD', true], ['Pararte en la marca S (32 m)', true], ['Guiar al avión hasta la barra de parada', true], [`Armar el diamante de seguridad (${puestos}/5)`, puestos === 5]]); } }));
   await esperarQue(() => puestos === 5); interactivos = []; decir('Diamante armado. ¡Llegada completa!'); await esperar(3);
   RES.errLlegada = errores.length;
@@ -434,13 +444,13 @@ async function protSalida() {
   ponerAvion(SALIDA, 0); A.motor = false; A.rpm = 0; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true); if (!RES.inicio) RES.inicio = performance.now();
   teletransportar(PUESTO.x - 4, PUESTO.z - 9, enAvion(0, 0, 0)); puedeCaminar = true;
   const estado = { fod: false, conos: false, pos: false, salida: false };
-  const lista = () => tareas([['Control de FOD en el recorrido', estado.fod], ['Retirar el diamante (conos)', estado.conos], ['Pararte en la marca S', estado.pos], ['Encendido y salida', estado.salida]]); lista();
+  const lista = () => tareas([['FOD del recorrido al tacho', estado.fod], ['Retirar el diamante (conos)', estado.conos], ['Pararte en la marca S', estado.pos], ['Encendido y salida', estado.salida]]); lista();
   sembrarFOD([['piedra', 3, -10], ['precinto', -1.2, -12.5], ['tornillo', 6.5, -19], ['trapo', 12, -20.5]]);
   decir('El avión va a salir hacia la pista: recto hacia la marca S y después a la derecha, por la línea amarilla. Revisá ese recorrido y levantá el FOD. Son cuatro objetos.');
-  interactivos = fods.map(f => ({ obj: f, alTocar: it => { f.visible = false; audio.ok(); interactivos = interactivos.filter(x => x !== it); const q = fods.filter(x => x.visible).length; if (!q) { estado.fod = true; lista(); } decir(q ? `Bien. Quedan ${q}.` : 'Recorrido limpio.', { hablar: !q }); } }));
-  await esperarQue(() => estado.fod);
+  interactivos = fods.map(f => ({ obj: f, alTocar: it => { f.visible = false; audio.ok(); interactivos = interactivos.filter(x => x !== it); const q = fods.filter(x => x.visible).length; decir(q ? `Bien. Quedan ${q}.` : 'Recorrido limpio. Tirá lo que juntaste en el tacho de FOD.'); } }));
+  await esperarQue(() => fods.every(f => !f.visible)); await tirarEnTacho(); estado.fod = true; lista();
   decir('Ahora retirá los conos del diamante: tocá cada uno.');
-  interactivos = conos.map(c => ({ obj: c, alTocar: it => { c.visible = false; audio.aviso(); interactivos = interactivos.filter(x => x !== it); if (conos.every(x => !x.visible)) { estado.conos = true; lista(); } } }));
+  interactivos = conos.map(c => ({ obj: c, alcanceExtra: 2.5, alTocar: it => { c.visible = false; audio.aviso(); interactivos = interactivos.filter(x => x !== it); if (conos.every(x => !x.visible)) { estado.conos = true; lista(); } } }));
   await esperarQue(() => estado.conos); interactivos = [];
   decir('Andá a la marca S y mirá al avión.');
   // el compañero se queda revisando delante de la hélice: el alumno tiene que esperar a que se aleje
@@ -577,5 +587,5 @@ renderer.setAnimationLoop(() => {
     renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h); renderer.setScissorTest(true); renderer.autoClear = false; renderer.clearDepth(); renderer.render(escenaPrev, camPrev); renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight); }
 });
 addEventListener('resize', () => { camara.aspect = innerWidth / innerHeight; camara.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
-window.__senales = { constancia, abrirPausa, get pausado() { return pausado; }, set vel(v) { velJuego = v; }, get esperada() { return esperada; }, A, avion, senalero, tutor, irA, sena: id => senaDelAlumno(id), get fase() { return faseActual; }, fods: () => fods, conos, fantasmas, teletransportar, rig, camara, epp, mesaEPP, tocarObj: o => { const it = interactivos.find(i => i.obj === o); if (it) it.alTocar(it); }, interactivos: () => interactivos, errores: () => errores, POS_SENALERO, detector, RES, panel: id => { const b = [...document.querySelectorAll('#panel-botones button')].find(x => x.textContent.includes(id)); b?.click(); } };
+window.__senales = { tachos, constancia, abrirPausa, get pausado() { return pausado; }, set vel(v) { velJuego = v; }, get esperada() { return esperada; }, A, avion, senalero, tutor, irA, sena: id => senaDelAlumno(id), get fase() { return faseActual; }, fods: () => fods, conos, fantasmas, teletransportar, rig, camara, epp, mesaEPP, tocarObj: o => { const it = interactivos.find(i => i.obj === o); if (it) it.alTocar(it); }, interactivos: () => interactivos, errores: () => errores, POS_SENALERO, detector, RES, panel: id => { const b = [...document.querySelectorAll('#panel-botones button')].find(x => x.textContent.includes(id)); b?.click(); } };
 correr('intro');
