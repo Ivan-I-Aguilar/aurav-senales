@@ -11,7 +11,7 @@ import { crearAT802GLB } from './at802glb.js?v=20261008a';
 import { crearSenaleroGLB, crearSenalero, SENAS, ORDEN_CURSO } from './senalero.js?v=20261008b';
 import { crearPlataforma, colocarCarteles, crearTachoFOD, crearCartel, estacionarAviones, crearCono, crearCalza, crearFOD, crearEPP, crearPaleta,
   PUESTO, POS_SENALERO, POS_SALIDA, SALIDA_GIRO, SALIDA_FIN_GIRO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261008e';
-import { crearDetector } from './gestos.js?v=20261008b';
+import { crearDetector } from './gestos.js?v=20261008c';
 import { crearPanelVR } from './panelvr.js?v=20261008b';
 import { crearAudio } from './audio.js?v=20261008a';
 import { Constancia } from './constancia.js?v=20261008c';
@@ -170,7 +170,9 @@ let dtActual = 0;
 
 // ---------- señas del alumno
 let modoSenas = false, esperada = null, alResolver = null, ultimaSena = null, errores = [], tEsperando = 0, intentosMal = 0;
-const NOMBRE = id => SENAS[id].nombre.replace(' (a validar)', '');
+// Los giros se nombran desde el señalero, que está de frente al avión: el giro a la derecha del piloto es a la izquierda del señalero (corrección de Iván)
+const NOMBRES_SENALERO = { giroDerecha: 'Girar a tu izquierda', giroIzquierda: 'Girar a tu derecha' };
+const NOMBRE = id => NOMBRES_SENALERO[id] || SENAS[id].nombre.replace(' (a validar)', '');
 function registrarError(txt) { errores.push(txt); audio.mal(); }
 function senaDelAlumno(id, origen = 'menu') {
   if (!modoSenas) return;
@@ -214,7 +216,7 @@ function guiaSena(id) {
 // ---------- detección de gestos (VR)
 const detector = crearDetector();
 const controles = [0, 1].map(i => { const c = renderer.xr.getController(i), g = renderer.xr.getControllerGrip(i); rig.add(c); rig.add(g);
-  const pal = crearPaleta(); pal.rotation.x = -Math.PI / 2; pal.position.z = 0.02; pal.visible = false; g.add(pal);   // la paleta sale hacia −z del grip
+  const pal = crearPaleta(); pal.rotation.x = Math.PI / 2;   // la punta (−y de la paleta) queda hacia −z del grip: sale por arriba del puño (antes quedaba invertida) pal.position.z = 0.02; pal.visible = false; g.add(pal);   // la paleta sale hacia −z del grip
   const rayo = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({ color: 0xc8e63a })); rayo.scale.z = 5; rayo.visible = false; c.add(rayo);
   const o = { c, g, pal, rayo, lado: null, fuente: null, prev: {} };
   c.addEventListener('connected', e => { o.lado = e.data.handedness; o.fuente = e.data; });
@@ -337,7 +339,7 @@ async function obsLlegada() {
   decir('Primero saluda al piloto que llega, para que lo identifique como su señalero.'); await senaObs('saludo', 4);
   decir('Después le indica la posición: este es tu puesto.'); await senaObs('posicion', 4);
   decir('«Avanzar»: el avión rueda por la calle de rodaje.'); await senaObs('avanzar'); moverAvion(17, 2.2); await esperarQue(() => A.s >= 16.5);
-  decir('«Giro a la derecha», desde el punto de vista del piloto: el brazo izquierdo del señalero queda extendido y el derecho marca el giro.'); await senaObs('giroDerecha'); moverAvion(29.4, 1.5); await esperarQue(() => A.s >= 29);
+  decir('El avión tiene que girar hacia la izquierda del señalero (que para el piloto es su derecha): el brazo izquierdo queda extendido señalando hacia dónde ir y el derecho marca el giro.'); await senaObs('giroDerecha'); moverAvion(29.4, 1.5); await esperarQue(() => A.s >= 29);
   decir('De nuevo «avanzar», ahora derecho hacia el señalero.'); await senaObs('avanzar'); moverAvion(36, 1.8);
   await esperarQue(() => A.s >= 31);
   decir('¡Atención! Una camioneta cruza delante del avión: «parada de emergencia» enseguida.');
@@ -369,7 +371,7 @@ async function obsSalida() {
   decir('Motor estabilizado: «retirar calzas».'); await senaObs('retirarCalzas'); await tutorIrA(enAvion(-1.3, 0, -2.3)); ponerCalzas(false); audio.ok(); tutorAlAla(); await esperar(2.5);
   decir('«Todo despejado»: el señalero confirma que no hay obstáculos.'); await senaObs('todoDespejado', 3.5);
   decir('Para la salida el señalero se para en la marca S2, adelante a la izquierda: el avión gira a la derecha y el ala izquierda barre todo lo que tiene adelante. «Avanzar».'); await senaObs('avanzar'); moverAvion(SALIDA_GIRO, 1.5); await esperarQue(() => A.s >= SALIDA_GIRO - 0.1);
-  decir('«Giro a la derecha», hacia la pista.'); await senaObs('giroDerecha'); moverAvion(SALIDA_FIN_GIRO, 1.5); await esperarQue(() => A.s >= SALIDA_FIN_GIRO - 0.4);
+  decir('Giro hacia la izquierda del señalero (la derecha del piloto), hacia la pista.'); await senaObs('giroDerecha'); moverAvion(SALIDA_FIN_GIRO, 1.5); await esperarQue(() => A.s >= SALIDA_FIN_GIRO - 0.4);
   decir('«Avanzar» y el avión sale hacia la pista. El compañero de punta de ala acompaña hasta que el ala queda libre de obstáculos y ahí se separa.'); await senaObs('avanzar'); moverAvion(SALIDA.largo, 3);
   await esperarQue(() => A.s >= SALIDA_FIN_GIRO + 2.5); tutorSeQueda();
   await esperar(5); senalero.userData.hacer('saludo'); rotulo('Señalero: despedida'); await esperar(4);
@@ -412,7 +414,7 @@ async function protLlegada() {
   await paso('posicion', 'Indicale que este es su puesto.');
   await paso('avanzar', 'Hacé que avance por la calle de rodaje.'); moverAvion(17, 2.2);
   await esperarQue(() => { vigilar(); return A.s >= 16.6 && A.v < 0.05; });
-  await paso('giroDerecha', 'Tiene que girar hacia el puesto. Ojo: derecha e izquierda son las del piloto.'); moverAvion(29.4, 1.5);
+  await paso('giroDerecha', 'Hacé que gire hacia el puesto: hacia tu izquierda. Estás de frente al avión, así que para el piloto es su derecha.'); moverAvion(29.4, 1.5);
   await esperarQue(() => { vigilar(); return A.s >= 29.3 && A.v < 0.05; });
   await paso('avanzar', 'Que avance derecho hacia vos.'); moverAvion(36, 1.8);
   await esperarQue(() => { vigilar(); return A.s >= 31; });
@@ -477,7 +479,7 @@ async function protSalida() {
   await paso('retirarCalzas', 'Motor estabilizado. Indicale que se retiran las calzas.'); await tutorIrA(enAvion(-1.3, 0, -2.3)); ponerCalzas(false); audio.ok(); tutorAlAla(); await esperar(2);
   await paso('todoDespejado', 'Confirmale que no hay obstáculos.');
   await paso('avanzar', 'Que empiece a avanzar.'); moverAvion(SALIDA_GIRO, 1.5); await esperarQue(() => { pos(); return A.s >= SALIDA_GIRO - 0.1 && A.v < 0.05; });
-  await paso('giroDerecha', 'Tiene que girar hacia la pista.'); moverAvion(SALIDA_FIN_GIRO, 1.5); await esperarQue(() => { pos(); return A.s >= SALIDA_FIN_GIRO - 0.1 && A.v < 0.05; });
+  await paso('giroDerecha', 'Hacé que gire hacia la pista: hacia tu izquierda (la derecha del piloto).'); moverAvion(SALIDA_FIN_GIRO, 1.5); await esperarQue(() => { pos(); return A.s >= SALIDA_FIN_GIRO - 0.1 && A.v < 0.05; });
   await paso('avanzar', 'Despedilo: que siga hacia la pista.'); moverAvion(SALIDA.largo, 3); estado.salida = true; lista(); mostrarMenuSenas(false);
   await esperarQue(() => A.s >= SALIDA_FIN_GIRO + 2.5); tutorSeQueda(); decir('El ala ya pasó los obstáculos: tu compañero se separa y el avión sigue solo.', { hablar: false });
   decir('¡Salida completa! El piloto sigue por su cuenta hacia la pista.'); await esperar(6);

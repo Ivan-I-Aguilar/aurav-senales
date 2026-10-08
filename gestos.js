@@ -7,12 +7,16 @@ import * as THREE from './three.module.js';
 import { SENAS } from './senalero.js?v=20261008b';
 
 const L_BRAZO = 0.30, L_ANTE = 0.27;
-const ESTATICAS = new Set(['esperar', 'todoDespejado', 'negativo', 'posicion', 'paradaEmergencia']);
+const ESTATICAS = new Set(['esperar', 'todoDespejado', 'negativo', 'posicion', 'paradaEmergencia', 'encenderMotores']);   // (encender: el giro es de muñeca, casi no mueve la mano)
 // pares que con paletas son iguales en postura y sólo los distingue el contexto (o el ritmo): se aceptan entre sí
 export const GRUPOS = [['paradaNormal', 'paradaEmergencia'], ['retirarCalzas', 'colocarCalzas']];
 const grupo = id => GRUPOS.find(g => g.includes(id)) || [id];
-const UMBRAL = 0.62;          // radianes promedio (brazo + paleta, dos manos)
-const SOSTENER = 0.9;         // segundos acumulados de coincidencia
+// Tolerancia (Iván probó en Quest, 8/10: «ser menos estrictos»): umbral amplio, menos peso a la inclinación de la paleta y
+// menos tiempo sostenido. Cuando hay una seña esperada, alcanza con parecerse a ésa (no hace falta que sea la mejor de todas).
+const UMBRAL = 0.8;           // radianes promedio (brazo + paleta, dos manos)
+const UMBRAL_ESPERADA = 1.0;
+const SOSTENER = 0.6;         // segundos acumulados de coincidencia
+const MOVIMIENTO = 0.1;       // metros que tienen que recorrer las puntas en las señas con movimiento
 
 // muestras de cada seña: [{ d: [c, p], i: [c, p] }]
 const MUESTRAS = {};
@@ -46,7 +50,7 @@ export function crearDetector() {
     const out = {};
     for (const [id, arr] of Object.entries(MUESTRAS)) {
       let mejor = 9;
-      for (const m of arr) { let e = 0; for (const k of ['d', 'i']) e += med[k][0].angleTo(m[k][0]) + 0.6 * med[k][1].angleTo(m[k][1]); e /= 3.2; if (e < mejor) mejor = e; }
+      for (const m of arr) { let e = 0; for (const k of ['d', 'i']) e += med[k][0].angleTo(m[k][0]) + 0.35 * med[k][1].angleTo(m[k][1]); e /= 2.7; if (e < mejor) mejor = e; }
       out[id] = mejor;
     }
     return out;
@@ -61,9 +65,12 @@ export function crearDetector() {
       historial.push([punta(manos.d), punta(manos.i)]); if (historial.length > 60) historial.shift();
       let mov = 0; if (historial.length > 10) { for (const k of [0, 1]) { const b = new THREE.Box3(); historial.forEach(h => b.expandByPoint(h[k])); mov = Math.max(mov, b.getSize(new THREE.Vector3()).length()); } }
       let mejor = null, e = 9; for (const [id, x] of Object.entries(p)) if (x < e) { e = x; mejor = id; }
+      const esp = esperada ? grupo(esperada) : null;
       for (const id of Object.keys(p)) {
-        const ok = grupo(mejor).includes(id) && p[mejor] < UMBRAL && (ESTATICAS.has(id) || mov > 0.18);
-        acum[id] = ok ? (acum[id] || 0) + dt : Math.max(0, (acum[id] || 0) - dt * 2);
+        const seMueve = ESTATICAS.has(id) || mov > MOVIMIENTO;
+        const ok = esp ? (esp.includes(id) && Math.min(...esp.map(x => p[x])) < UMBRAL_ESPERADA && seMueve)
+                       : (grupo(mejor).includes(id) && p[mejor] < UMBRAL && seMueve);
+        acum[id] = ok ? (acum[id] || 0) + dt : Math.max(0, (acum[id] || 0) - dt);
       }
       let reconocida = null;
       for (const id of Object.keys(p)) if (acum[id] >= SOSTENER) { reconocida = esperada && grupo(id).includes(esperada) ? esperada : id; this.reiniciar(); break; }
