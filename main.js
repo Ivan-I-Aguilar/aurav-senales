@@ -173,33 +173,42 @@ const NOMBRE = id => SENAS[id].nombre.replace(' (a validar)', '');
 function registrarError(txt) { errores.push(txt); audio.mal(); }
 function senaDelAlumno(id, origen = 'menu') {
   if (!modoSenas) return;
-  ultimaSena = { id, t: performance.now() }; preview.userData.hacer(id); vistaPrevia(true);
-  $('mi-sena').textContent = 'Tu seña: ' + NOMBRE(id); cartelVR.poner(textoTutor, 'Tu seña: ' + NOMBRE(id));
+  ultimaSena = { id, t: performance.now() }; cartelVR.poner(textoTutor, 'Hiciste: ' + NOMBRE(id));
   if (!esperada) return;
   const ok = esperada.includes(id);
   if (!ok && origen === 'gesto') return;   // en VR una postura de paso puede parecerse a otra seña: sólo se muestra, no se penaliza
-  if (ok) { const r = alResolver; esperada = null; alResolver = null; audio.ok(); r(id); }
-  else { intentosMal++; registrarError(`Seña equivocada: «${NOMBRE(id)}» cuando correspondía «${NOMBRE(esperada[0])}»`);
-    decir(`No. Hiciste «${NOMBRE(id)}». El piloto no va a entender esa indicación ahora.` + (intentosMal >= 2 ? ` Pista: la seña es «${NOMBRE(esperada[0])}».` : ' Pensá qué necesita hacer el avión.')); }
+  if (ok) { const r = alResolver; esperada = null; alResolver = null; audio.ok(); guiaSena(null); r(id); }
+  else { intentosMal++; audio.aviso();   // modo instructivo: se corrige, no se penaliza
+    decir(`Esa es «${NOMBRE(id)}». Mirá la figura y copiá «${NOMBRE(esperada[0])}».`, { hablar: false }); }
 }
 function esperarSena(ids, { pista = 14 } = {}) {
-  const lista = Array.isArray(ids) ? ids : [ids]; esperada = lista; intentosMal = 0; tEsperando = 0; pistaDada = false; pistaSeg = pista; detector.reiniciar();
+  const lista = Array.isArray(ids) ? ids : [ids]; esperada = lista; intentosMal = 0; tEsperando = 0; pistaDada = false; pistaSeg = pista; detector.reiniciar(); guiaSena(lista[0]);
   const tok = corrida; return new Promise((res, rej) => { let hecho = false; const mio = id => { hecho = true; res(id); }; alResolver = mio;
-    vigilantes.push({ cond: () => hecho, res() { }, rej: () => { if (alResolver === mio) { esperada = null; alResolver = null; } rej(new Corte()); }, tok }); });
+    vigilantes.push({ cond: () => hecho, res() { }, rej: () => { if (alResolver === mio) { esperada = null; alResolver = null; guiaSena(null); } rej(new Corte()); }, tok }); });
 }
 let pistaDada = false, pistaSeg = 14;
-function revisarPista(dt) { if (!esperada) return; tEsperando += dt; if (!pistaDada && tEsperando > pistaSeg) { pistaDada = true; decir(`Pista: el piloto espera la seña «${NOMBRE(esperada[0])}».`); } }
+function revisarPista(dt) { if (!esperada) return; tEsperando += dt; if (!pistaDada && tEsperando > pistaSeg) { pistaDada = true; decir(`Copiá el movimiento de la figura: «${NOMBRE(esperada[0])}».`); } }
 
 // menú de señas (PC/celular): orden de la lámina del curso + extras al final
 const contSenas = $('senas');
-for (const id of [...ORDEN_CURSO, ...Object.keys(SENAS).filter(i => SENAS[i].extra)]) { const b = document.createElement('button'); b.textContent = NOMBRE(id); b.onclick = () => senaDelAlumno(id); contSenas.appendChild(b); }
-function mostrarMenuSenas(v) { modoSenas = v; contSenas.hidden = !v || renderer.xr.isPresenting; $('mi-sena').hidden = !v; if (!v) vistaPrevia(false); }
+for (const id of [...ORDEN_CURSO, ...Object.keys(SENAS).filter(i => SENAS[i].extra)]) { const b = document.createElement('button'); b.textContent = NOMBRE(id); b.dataset.id = id; b.onclick = () => senaDelAlumno(id); contSenas.appendChild(b); }
+function mostrarMenuSenas(v) { modoSenas = v; contSenas.hidden = !v || renderer.xr.isPresenting; if (!v) guiaSena(null); }
 
 // vista previa de la seña del alumno (figura por código en una esquina)
 const escenaPrev = new THREE.Scene(); escenaPrev.add(new THREE.HemisphereLight(0xffffff, 0x667788, 2.2)); { const d = new THREE.DirectionalLight(0xffffff, 1.5); d.position.set(1, 2, 3); escenaPrev.add(d); }
 const preview = crearSenalero(); escenaPrev.add(preview);
-const camPrev = new THREE.PerspectiveCamera(32, 0.75, 0.1, 20); camPrev.position.set(0, 1.25, 4.6); camPrev.lookAt(0, 1.15, 0);
+const camPrev = new THREE.PerspectiveCamera(32, 0.75, 0.1, 20); camPrev.position.set(0, 1.25, -5.6);   // de espaldas: el alumno copia el movimiento sin espejar
+ camPrev.lookAt(0, 1.15, 0);
 let prevVisible = false; function vistaPrevia(v) { prevVisible = v; }
+// figura guía: muestra en miniatura la seña que hay que hacer (esquina en PC; flotando abajo a la derecha en el visor)
+const miniVR = crearSenalero(); miniVR.scale.setScalar(0.2); miniVR.position.set(0.42, -0.5, -1.0); miniVR.rotation.y = Math.PI; miniVR.visible = false; camara.add(miniVR);
+let senaGuia = null;
+function guiaSena(id) {
+  senaGuia = id; contSenas.querySelectorAll('button').forEach(b => b.classList.toggle('sugerida', b.dataset.id === id));
+  if (id) { preview.userData.hacer(id); miniVR.userData.hacer(id); $('mi-sena').textContent = 'Hacé: ' + NOMBRE(id);
+    contSenas.querySelector('button.sugerida')?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); }
+  vistaPrevia(!!id); $('mi-sena').hidden = !id; $('guia-fondo').hidden = !id || renderer.xr.isPresenting;
+}
 
 // ---------- detección de gestos (VR)
 const detector = crearDetector();
@@ -398,7 +407,7 @@ async function protLlegada() {
   const pos = vigilarPosicion(); const vigilar = () => pos();
   mostrarMenuSenas(true);
   const paso = async (id, texto) => { if (texto) decir(texto); await esperarSena(id); };
-  await paso('saludo', 'El avión te vio. Saludá al piloto.' + (renderer.xr.isPresenting ? ' (Si no te toma la seña, apretá A o X para elegirla en el menú.)' : ''));
+  await paso('saludo', 'El avión te vio. Llamá al piloto saludándolo. La figura te muestra cada seña: copiala.' + (renderer.xr.isPresenting ? ' (Si no te toma la seña, apretá A o X para elegirla en el menú.)' : ''));
   await paso('posicion', 'Indicale que este es su puesto.');
   await paso('avanzar', 'Hacé que avance por la calle de rodaje.'); moverAvion(17, 2.2);
   await esperarQue(() => { vigilar(); return A.s >= 16.6 && A.v < 0.05; });
@@ -407,7 +416,7 @@ async function protLlegada() {
   await paso('avanzar', 'Que avance derecho hacia vos.'); moverAvion(36, 1.8);
   await esperarQue(() => { vigilar(); return A.s >= 31; });
   // 3) imprevisto: incursión de la Hilux
-  decir('¡Atención!'); let tCruce = 0, reacciono = false; const cruce = cruceHilux(() => { tCruce = performance.now(); });
+  decir('¡Un vehículo va a cruzar delante del avión! Ordená «parada de emergencia» ya.'); let tCruce = 0, reacciono = false; const cruce = cruceHilux(() => { tCruce = performance.now(); });
   const resp = esperarSena(['paradaEmergencia'], { pista: 99 }).then(() => { reacciono = true; RES.reaccion = tCruce ? (performance.now() - tCruce) / 1000 : 0; pararAvion(true); decir('¡Bien! Parada de emergencia a tiempo.'); });
   await esperarQue(() => reacciono || (tCruce && performance.now() - tCruce > 4500));
   if (!reacciono) { esperada = null; pararAvion(true); registrarError('No diste la parada de emergencia ante el vehículo'); decir('¡El vehículo cruzó delante del avión! Correspondía «parada de emergencia» enseguida. Esta vez el piloto lo vio y frenó solo.'); resp.catch(() => { }); }
@@ -583,8 +592,9 @@ renderer.setAnimationLoop(() => {
   if (renderer.xr.isPresenting) actualizarVR(dt); else moverPC(dt);
   revisarPista(dt); revisarVigilantes(); actualizarGuia(dt);
   renderer.setScissorTest(false); renderer.render(escena, camara);
+  miniVR.visible = renderer.xr.isPresenting && !!senaGuia && !pausado; if (miniVR.visible) miniVR.userData.actualizar(dt);
   if (prevVisible && !renderer.xr.isPresenting) { preview.userData.actualizar(dt); const w = Math.min(170, innerWidth * 0.3), h = w * 1.33, x = innerWidth - w - 12, y = (contSenas.hidden ? 12 : 70);
-    renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h); renderer.setScissorTest(true); renderer.autoClear = false; renderer.clearDepth(); renderer.render(escenaPrev, camPrev); renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight); }
+    renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h); renderer.setScissorTest(true); renderer.autoClear = false; { const cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha(); renderer.setClearColor(0xdfe8ee, 1); renderer.clear(true, true); renderer.setClearColor(cc, ca); } renderer.render(escenaPrev, camPrev); renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight); }
 });
 addEventListener('resize', () => { camara.aspect = innerWidth / innerHeight; camara.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 window.__senales = { tachos, constancia, abrirPausa, get pausado() { return pausado; }, set vel(v) { velJuego = v; }, get esperada() { return esperada; }, A, avion, senalero, tutor, irA, sena: id => senaDelAlumno(id), get fase() { return faseActual; }, fods: () => fods, conos, fantasmas, teletransportar, rig, camara, epp, mesaEPP, tocarObj: o => { const it = interactivos.find(i => i.obj === o); if (it) it.alTocar(it); }, interactivos: () => interactivos, errores: () => errores, POS_SENALERO, detector, RES, panel: id => { const b = [...document.querySelectorAll('#panel-botones button')].find(x => x.textContent.includes(id)); b?.click(); } };

@@ -30,6 +30,8 @@
     background: linear-gradient(rgba(8,36,64,0), rgba(8,36,64,.85)); }
   #senas button { flex: 0 0 auto; background: rgba(255,255,255,.94); color: var(--tinta); font-size: 13px; }
   #senas button:active { background: var(--chaleco); }
+  #senas button.sugerida { background: var(--chaleco); font-weight: bold; box-shadow: 0 0 0 3px #fff; }
+  #guia-fondo { position: fixed; right: 12px; bottom: 70px; width: min(170px, 30vw); aspect-ratio: 170 / 226; border: 3px solid var(--chaleco); border-radius: 6px; pointer-events: none; box-sizing: border-box; }
   #mi-sena { position: fixed; right: 12px; bottom: 300px; background: var(--chaleco); color: var(--tinta); font-weight: bold; font-size: 13px; padding: 5px 10px; border-radius: 10px; }
   #panel { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8,36,64,.35); }
   #panel[hidden] { display: none; }
@@ -68,11 +70,11 @@
 <div id="cartel" hidden></div>
 <ul id="tareas" hidden></ul>
 <div id="tutor" hidden><b>COMPAÑERO DE PUNTA DE ALA</b><span id="tutor-texto"></span></div>
-<div id="mi-sena" hidden></div>
+<div id="guia-fondo" hidden></div><div id="mi-sena" hidden></div>
 <div id="senas" hidden></div>
 <div id="panel" hidden><div class="caja"><h2 id="panel-titulo"></h2><div id="panel-texto"></div><label id="nombre-cert" hidden>Nombre para el certificado<input id="nombre-input" maxlength="40" placeholder="Nombre y apellido"></label><div id="panel-botones"></div></div></div>
 <div id="pausa" hidden><div class="caja"><h2>Pausa</h2><div class="sub">El juego está detenido.</div><div id="pausa-botones"></div></div></div>
 <div id="salida" hidden><div class="caja"><h2>Saliste del juego</h2><div class="sub">Gracias por practicar. Ya podés cerrar esta pestaña.</div><button id="volver">Volver a entrar</button></div></div>
-<script type="module" src="./main.js?v=20261008f"></script>
+<script type="module" src="./main.js?v=20261008h"></script>
 </body>
 </html>
