@@ -60,6 +60,18 @@ export function crearPlataforma(escena) {
     m.position.copy(a.p).lerp(b.p, 0.5); m.position.y = 0.012; escena.add(m); } };
   linea(LLEGADA, 0, LLEGADA.largo); linea(SALIDA, 0, 30);
   { const b = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.3), amarillo); b.rotation.x = -Math.PI / 2; b.position.set(PUESTO.x, 0.013, PUESTO.z); escena.add(b); }
+  // calle de servicio de vehículos (borde sur de la plataforma): bordes blancos continuos y eje discontinuo.
+  // Entra por el portón sudeste (x 17) y corre hacia el oeste por z −26; los vehículos no deben salir de ella.
+  { const tira = (x1, z1, x2, z2, ancho = 0.12, trazo = 0) => { const dx = x2 - x1, dz = z2 - z1, L = Math.hypot(dx, dz), n = trazo ? Math.floor(L / (trazo * 2)) : 1;
+      for (let k = 0; k < n; k++) { const l = trazo || L, t0 = trazo ? (k * 2 * trazo) / L : 0, cx = x1 + dx * (t0 + l / L / 2), cz = z1 + dz * (t0 + l / L / 2);
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(ancho, l), blanco); m.rotation.set(-Math.PI / 2, 0, Math.atan2(-dx, -dz), 'YXZ'); m.rotation.order = 'YXZ';
+        m.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(-dx, -dz)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2));
+        m.position.set(cx, 0.013, cz); escena.add(m); } };
+    tira(15.4, -45, 15.4, -28.2); tira(18.4, -45, 18.4, -23.8); tira(16.9, -45, 16.9, -26, 0.1, 1.5);   // tramo norte-sur desde el portón
+    tira(15.4, -28.2, -12, -28.2); tira(18.4, -23.8, -12, -23.8); tira(15, -26, -12, -26, 0.1, 1.5);   // tramo este-oeste
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128; const c = cv.getContext('2d'); c.fillStyle = '#f2f2ea'; c.font = 'bold 92px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('VEHÍCULOS', 256, 66);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+    for (const [x, z, r] of [[16.9, -38, Math.PI], [4, -26, -Math.PI / 2]]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.65), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false })); m.rotation.set(-Math.PI / 2, 0, r); m.position.set(x, 0.014, z); escena.add(m); } }
   // posiciones del señalero: círculo blanco con la «S» (llegada) y «S2» (salida)
   for (const [txt, pos] of [['S', POS_SENALERO], ['S2', POS_SALIDA]]) { const cv = document.createElement('canvas'); cv.width = cv.height = 256; const c = cv.getContext('2d'); c.strokeStyle = '#f2f2ea'; c.lineWidth = 14; c.beginPath(); c.arc(128, 128, 110, 0, Math.PI * 2); c.stroke();
     c.fillStyle = '#f2c200'; c.font = `bold ${txt.length > 1 ? 96 : 120}px Arial`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, 128, 134);

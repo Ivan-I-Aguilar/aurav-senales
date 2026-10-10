@@ -10,7 +10,7 @@ import { crearEscenario } from './escenario.js?v=20261008a';
 import { crearAT802GLB } from './at802glb.js?v=20261008a';
 import { crearSenaleroGLB, crearSenalero, SENAS, ORDEN_CURSO } from './senalero.js?v=20261008b';
 import { crearPlataforma, colocarCarteles, crearTachoFOD, crearCartel, estacionarAviones, crearCono, crearCalza, crearFOD, crearEPP, crearPaleta,
-  PUESTO, POS_SENALERO, POS_SALIDA, SALIDA_GIRO, SALIDA_FIN_GIRO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261008e';
+  PUESTO, POS_SENALERO, POS_SALIDA, SALIDA_GIRO, SALIDA_FIN_GIRO, CONOS_DIAMANTE, CALZAS, LLEGADA, SALIDA, PARADA } from './plataforma.js?v=20261010a';
 import { crearDetector } from './gestos.js?v=20261008e';
 import { crearPanelVR } from './panelvr.js?v=20261008b';
 import { crearAudio } from './audio.js?v=20261008a';
@@ -31,6 +31,8 @@ const escena = new THREE.Scene();
 const camara = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 900);
 const rig = new THREE.Group(); rig.add(camara); escena.add(rig);
 camara.position.y = ALTURA_OJOS;
+// niebla por distancia real y no por profundidad de pantalla: en el Quest la bruma de las sierras «saltaba» al girar la cabeza
+THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = length( mvPosition.xyz );\n#endif';
 const ambiente = crearEscenario(escena);
 { const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256; const g = cv.getContext('2d');
   const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#6f97c0'); gr.addColorStop(0.48, '#e8eef2'); gr.addColorStop(0.52, '#9a9c8b'); gr.addColorStop(1, '#4a4f40');
@@ -314,10 +316,20 @@ const motorHilux = (() => { const ctx = audio.oyente.context, sr = ctx.sampleRat
   for (let i = 0; i < n; i++) { const t = i / sr, w = Math.random() * 2 - 1; f = 0.97 * f + 0.03 * w;
     d[i] = (Math.sin(2 * Math.PI * 38 * t) * 0.35 + Math.sin(2 * Math.PI * 76 * t + Math.sin(2 * Math.PI * 9 * t)) * 0.25 + f * 2.2) * (0.75 + 0.25 * Math.sin(2 * Math.PI * 19 * t)); }
   return audio.posicional(hilux, b, { loop: true, volumen: 2.2, ref: 7 }); })();
-async function cruceHilux(alEntrar, { desde = 26, vel = 7 } = {}) {
-  hilux.visible = true; const z = PUESTO.z - 5; let x = desde; /* cruza entre la nariz del avión que llega y el señalero */ hilux.position.set(x, 0, z); hilux.rotation.y = Math.PI; let avisado = false;
+// Recorrido de la camioneta: entra por el portón sudeste y va por la calle de servicio de vehículos (borde sur de la
+// plataforma); en vez de seguir por la calle, «ataja» por la zona de maniobra del puesto P3 (entre la nariz del avión
+// que llega y el señalero) rumbo al hangar 01. Ese atajo es la incursión. El recorrido evita aviones, autobomba y carteles.
+const RUTA_HILUX = [[17, -50], [17, -26], [5, -7.5], [-9, -5], [-31, 5], [-33, 6]].map(([x, z]) => new THREE.Vector3(x, 0, z));
+async function cruceHilux(alEntrar, { vel = 8.5 } = {}) {
+  hilux.visible = true; let i = 0, avisado = false; hilux.position.copy(RUTA_HILUX[0]); { const d = RUTA_HILUX[1].clone().sub(RUTA_HILUX[0]); hilux.rotation.y = Math.atan2(-d.z, d.x); }
   if (audio.oyente.context.state === 'running' && !motorHilux.isPlaying) motorHilux.play();
-  await esperarQue(() => { x -= vel * dtActual; hilux.position.x = x; if (!avisado && x < 18.5) { avisado = true; alEntrar?.(); } return x < -32; });   // 18,5: borde este de la plataforma
+  await esperarQue(() => {
+    let paso = vel * dtActual;
+    while (paso > 0 && i < RUTA_HILUX.length - 1) { const dest = RUTA_HILUX[i + 1], d = dest.clone().sub(hilux.position); const L = d.length();
+      if (L <= paso) { hilux.position.copy(dest); paso -= L; i++; if (i === 1 && !avisado) { avisado = true; alEntrar?.(); } }   // deja la calle de servicio: entra a la zona de maniobra
+      else { hilux.position.addScaledVector(d.normalize(), paso); paso = 0; } }
+    if (i < RUTA_HILUX.length - 1) { const d = RUTA_HILUX[i + 1].clone().sub(hilux.position); const ang = Math.atan2(-d.z, d.x); hilux.rotation.y += Math.atan2(Math.sin(ang - hilux.rotation.y), Math.cos(ang - hilux.rotation.y)) * Math.min(1, dtActual * 4); }
+    return i >= RUTA_HILUX.length - 1; });
   hilux.visible = false; if (motorHilux.isPlaying) motorHilux.stop();
 }
 let tJuego = 0;
@@ -331,12 +343,12 @@ const RES = { reaccion: null, parada: null, inicio: 0 };
 async function intro() {
   reiniciarMundo(); faseTitulo('Señaleros de plataforma'); ponerAvion(LLEGADA, PARADA); A.motor = false; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true);
   teletransportar(POS_SENALERO.x - 3.5, POS_SENALERO.z - 3, enAvion(0, 0, 0)); senalero.userData.hacer('saludo');
-  const r = await preguntar('Señaleros de plataforma', 'Curso de Personal de Rampa · AAXOD\n\nPrimero vas a OBSERVAR cómo un señalero guía la llegada y la salida de un AT-802. Después vas a ser el PROTAGONISTA: te ponés el equipo, controlás el FOD, te parás a 7 m de la nariz y guiás al piloto.\n\nEn Quest los controles son tus paletas. En PC o celular elegís las señas en el menú de abajo.',
-    [{ id: 'empezar', texto: 'Empezar desde el principio' }, { id: 'practica', texto: 'Ir directo a la práctica' }, { id: 'elegir', texto: 'Ir a una fase', secundario: true }]);
+  // (Iván, 10/10: se quita la parte de observar; se juega directamente como protagonista. obsLlegada/obsSalida quedan en el código, sin acceso)
+  const r = await preguntar('Señaleros de plataforma', 'Curso de Personal de Rampa · AAXOD\n\nVas a ser el señalero: te ponés el equipo, controlás el FOD, te parás a 7 m de la nariz y guiás al piloto en la llegada y en la salida de un AT-802. Tu compañero de punta de ala te va guiando.\n\nEn Quest los controles son tus paletas. En PC o celular elegís las señas en el menú de abajo.',
+    [{ id: 'empezar', texto: 'Empezar' }, { id: 'elegir', texto: 'Ir a una parte', secundario: true }]);
   audio.reanudar();
-  if (r === 'practica') return 'equipo';
-  if (r === 'elegir') { const f = await preguntar('Ir a una fase', '', [{ id: 'obsLlegada', texto: '1 · Observar llegada' }, { id: 'obsSalida', texto: '2 · Observar salida' }, { id: 'equipo', texto: '3 · Equipo de protección' }, { id: 'protLlegada', texto: '4 · Guiar la llegada' }, { id: 'protSalida', texto: '5 · Guiar la salida' }]); return f; }
-  return 'obsLlegada';
+  if (r === 'elegir') return await preguntar('Ir a una parte', '', [{ id: 'equipo', texto: '1 · Equipo de protección' }, { id: 'protLlegada', texto: '2 · Guiar la llegada' }, { id: 'protSalida', texto: '3 · Guiar la salida' }]);
+  return 'equipo';
 }
 
 async function obsLlegada() {
@@ -348,10 +360,10 @@ async function obsLlegada() {
   decir('Después le indica la posición: este es tu puesto.'); await senaObs('posicion', 4);
   decir('«Avanzar»: el avión rueda por la calle de rodaje.'); await senaObs('avanzar'); moverAvion(17, 2.2); await esperarQue(() => A.s >= 16.5);
   decir('El avión tiene que girar hacia la izquierda del señalero (que para el piloto es su derecha): el brazo izquierdo queda extendido señalando hacia dónde ir y el derecho marca el giro.'); await senaObs('giroDerecha'); moverAvion(29.4, 1.5); await esperarQue(() => A.s >= 29);
-  decir('De nuevo «avanzar», ahora derecho hacia el señalero.'); await senaObs('avanzar'); moverAvion(38.5, 1.3);
+  decir('De nuevo «avanzar», ahora derecho hacia el señalero.'); await senaObs('avanzar'); moverAvion(38.5, 1.0);
   await esperarQue(() => A.s >= 30);
-  decir('¡Atención! ¿Escuchás el motor? Se acerca una camioneta por la derecha: cuando entra a la plataforma, el señalero da «parada de emergencia» enseguida.');
-  const cruce = cruceHilux(null, { desde: 48, vel: 8.5 }); await esperarQue(() => hilux.position.x < 20); await senaObs('paradaEmergencia'); pararAvion(true);
+  decir('¡Atención! ¿Escuchás el motor? Viene una camioneta por la calle de servicio: si se mete en la zona de maniobra, el señalero da «parada de emergencia» enseguida.');
+  const cruce = cruceHilux(null); await esperarQue(() => hilux.position.z > -24); await senaObs('paradaEmergencia'); pararAvion(true);
   await cruce; decir('El vehículo pasó y la zona quedó libre. El señalero retoma: «avanzar».'); await senaObs('avanzar', 1); moverAvion(36, 1.6); await esperarQue(() => A.s >= 35.6);
   decir('Cerca de la marca: «bajar velocidad».'); await senaObs('bajarVelocidad'); moverAvion(PARADA, 0.7); await esperarQue(() => A.s >= PARADA - 0.4);
   decir('«Parada normal» justo sobre la barra amarilla.'); await senaObs('paradaNormal'); pararAvion(false); await esperar(3);
@@ -367,7 +379,7 @@ async function obsLlegada() {
 async function obsSalida() {
   reiniciarMundo(); faseTitulo('2 · Observá la salida'); $('cabina').hidden = false;
   ponerAvion(SALIDA, 0); A.motor = false; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true); senalero.position.copy(POS_SALIDA); vistaObservador(POS_SALIDA);
-  sembrarFOD([['piedra', 1.5, -5], ['precinto', 4, -8.5], ['tornillo', 10, -10.5]]);
+  sembrarFOD([['piedra', 2, -5.5], ['tornillo', 9, -10.5]]);
   decir('Antes de la salida: control de FOD. Cualquier objeto suelto puede ser aspirado por el motor o despedido por la hélice.');
   T.modo = 'ir'; for (const f of [...fods]) { await tutorIrA(f.position.clone().add(new THREE.Vector3(0.5, 0, 0.5))); f.visible = false; audio.ok(); }
   decir('Lo que se junta no se guarda en el bolsillo: se tira en el tacho identificado «FOD».'); { const t = tachoCercano(tutor.position); await tutorIrA(t.position.clone().add(new THREE.Vector3(0.6, 0, 0.6))); audio.ok(); } await esperar(1);
@@ -387,7 +399,7 @@ async function obsSalida() {
 }
 
 async function equipo() {
-  reiniciarMundo(); faseTitulo('3 · Equipo de protección'); senalero.visible = false;
+  reiniciarMundo(); faseTitulo('1 · Equipo de protección'); senalero.visible = false;
   ponerAvion(LLEGADA, 0); A.motor = true; A.rpm = 1; tutor.position.copy(mesaEPP.position).add(new THREE.Vector3(2.6, 0, -1.6)); T.modo = 'quieto';
   teletransportar(mesaEPP.position.x + 0.2, mesaEPP.position.z + 1.6, mesaEPP.position); camara.rotation.x = -0.45; pitch = -0.45; camara.rotation.set(pitch, yaw, 0, 'YXZ');
   Object.keys(epp).forEach(k => epp[k] = false); const items = mesaEPP.userData.items; Object.values(items).forEach(o => o.visible = true);
@@ -400,14 +412,14 @@ async function equipo() {
 }
 
 async function protLlegada() {
-  reiniciarMundo(); faseTitulo('4 · Guiá la llegada'); senalero.visible = false; Object.keys(epp).forEach(k => epp[k] = true); Object.values(mesaEPP.userData.items).forEach(o => o.visible = false);
+  reiniciarMundo(); faseTitulo('2 · Guiá la llegada'); senalero.visible = false; Object.keys(epp).forEach(k => epp[k] = true); Object.values(mesaEPP.userData.items).forEach(o => o.visible = false);
   ponerAvion(LLEGADA, 0); A.motor = true; A.rpm = 1; tutorAlAlaYa(); RES.inicio = performance.now(); errores = []; RES.errLlegada = null; RES.parada = null; RES.reaccion = null;
   teletransportar(mesaEPP.position.x + 0.5, mesaEPP.position.z + 1.8, POS_SENALERO); puedeCaminar = true;
   // 1) FOD en el puesto
-  sembrarFOD([['tornillo', 0.8, -8], ['trapo', -2.2, -4], ['lata', 1.6, 1], ['botella', -0.8, 5]]);
+  sembrarFOD([['tornillo', 0.8, -7], ['trapo', -1.8, 0]]);
   const lista = () => tareas([[`Levantar el FOD y tirarlo en el tacho (${fods.filter(f => !f.visible).length}/${fods.length})`, fods.every(f => !f.visible)], ['Pararte en la marca S (7 m)', false], ['Guiar al avión hasta la barra de parada', false], ['Armar el diamante de seguridad', false]]);
   lista();
-  decir('El AT-802 está por llegar al puesto P3. Antes, recorré la zona entre tu posición y el puesto P3 y levantá todo el FOD que encuentres. Hay cuatro objetos. Tocá cada uno cuando estés cerca.');
+  decir('El AT-802 está por llegar al puesto P3. Antes, recorré la zona entre tu posición y el puesto P3 y levantá todo el FOD que encuentres. Hay dos objetos. Tocá cada uno cuando estés cerca.');
   interactivos = fods.map(f => ({ obj: f, alTocar: it => { f.visible = false; audio.ok(); interactivos = interactivos.filter(x => x !== it); lista(); const q = fods.filter(x => x.visible).length; decir(q ? `Bien. Quedan ${q}.` : 'Juntaste todo. Según la reglamentación, el FOD se tira en un tacho identificado «FOD»: llevalo al tacho más cercano.'); } }));
   await esperarQue(() => fods.every(f => !f.visible)); await tirarEnTacho();
   // 2) posición
@@ -424,18 +436,18 @@ async function protLlegada() {
   await esperarQue(() => { vigilar(); return A.s >= 16.6 && A.v < 0.05; });
   await paso('giroDerecha', 'Hacé que gire hacia el puesto: hacia tu izquierda. Estás de frente al avión, así que para el piloto es su derecha.'); moverAvion(29.4, 1.5);
   await esperarQue(() => { vigilar(); return A.s >= 29.3 && A.v < 0.05; });
-  await paso('avanzar', 'Que avance derecho hacia vos. Atento a lo que pasa alrededor.'); moverAvion(38.5, 1.3);
+  await paso('avanzar', 'Que avance derecho hacia vos. Atento a lo que pasa alrededor.'); moverAvion(38.5, 1.0);
   await esperarQue(() => { vigilar(); return A.s >= 30; });
   // 3) imprevisto: incursión de la Hilux
-  // imprevisto sin aviso: se oye el motor de una camioneta que se acerca por la derecha y entra a la plataforma.
+  // imprevisto sin aviso: se oye el motor de una camioneta que viene por la calle de servicio y ataja por la zona de maniobra.
   // El alumno tiene que reaccionar solo (sin figura guía); se mide el tiempo desde que entra a la plataforma.
-  let tCruce = 0, reacciono = false; const cruce = cruceHilux(() => { tCruce = tJuego; }, { desde: 48, vel: 8.5 });
+  let tCruce = 0, reacciono = false; const cruce = cruceHilux(() => { tCruce = tJuego; });
   const LIMITE = 3.0;
   const resp = esperarSena(['paradaEmergencia'], { pista: 99, guia: false }).then(() => { reacciono = true; RES.reaccion = tCruce ? tJuego - tCruce : 0; pararAvion(true); guiaSena(null);
-    if (!tCruce) decir('¡Bien! Lo escuchaste venir y paraste antes de que entrara a la plataforma.');
+    if (!tCruce) decir('¡Bien atento! Paraste antes de que la camioneta se metiera en la zona de maniobra.');
     else if (RES.reaccion <= LIMITE) decir(`¡Bien! Parada de emergencia en ${RES.reaccion.toFixed(1)} s.`);
     else { registrarError(`Parada de emergencia tardía ante el vehículo (${RES.reaccion.toFixed(1)} s)`); decir(`Paraste, pero tarde: ${RES.reaccion.toFixed(1)} s. Ante un vehículo en la zona de maniobra, la parada de emergencia tiene que ser inmediata.`); } });
-  await esperarQue(() => reacciono || (tCruce && tJuego - tCruce > LIMITE + 2.5));
+  await esperarQue(() => reacciono || (tCruce && tJuego - tCruce > LIMITE + 0.5));
   if (!reacciono) { esperada = null; guiaSena(null); pararAvion(true); registrarError('No diste la parada de emergencia ante el vehículo'); decir('¡El vehículo cruzó delante del avión! Correspondía «parada de emergencia» enseguida: brazos cruzados arriba. Esta vez el piloto lo vio y frenó solo.'); resp.catch(() => { }); }
   await cruce; await esperar(0.8);
   await paso('avanzar', 'La zona quedó libre. Indicale que continúe.'); moverAvion(36, 1.6);
@@ -466,13 +478,13 @@ async function protLlegada() {
 }
 
 async function protSalida() {
-  const previos = errores.slice(); reiniciarMundo(); errores = previos; faseTitulo('5 · Guiá la salida'); senalero.visible = false; Object.keys(epp).forEach(k => epp[k] = true); Object.values(mesaEPP.userData.items).forEach(o => o.visible = false);
+  const previos = errores.slice(); reiniciarMundo(); errores = previos; faseTitulo('3 · Guiá la salida'); senalero.visible = false; Object.keys(epp).forEach(k => epp[k] = true); Object.values(mesaEPP.userData.items).forEach(o => o.visible = false);
   ponerAvion(SALIDA, 0); A.motor = false; A.rpm = 0; ponerCalzas(true); ubicarConos(); conos.forEach(c => c.visible = true); if (!RES.inicio) RES.inicio = performance.now();
   teletransportar(PUESTO.x - 4, PUESTO.z - 9, enAvion(0, 0, 0)); puedeCaminar = true;
   const estado = { fod: false, conos: false, pos: false, salida: false };
   const lista = () => tareas([['FOD del recorrido al tacho', estado.fod], ['Retirar el diamante (conos)', estado.conos], ['Pararte en la marca S2 (salida)', estado.pos], ['Encendido y salida', estado.salida]]); lista();
-  sembrarFOD([['piedra', 1.5, -5], ['precinto', 4, -8.5], ['tornillo', 10, -10.5], ['trapo', 15, -9.5]]);
-  decir('El avión va a salir hacia la pista girando a la derecha, por la línea amarilla. Revisá ese recorrido y levantá el FOD. Son cuatro objetos.');
+  sembrarFOD([['piedra', 2, -5.5], ['tornillo', 9, -10.5]]);
+  decir('El avión va a salir hacia la pista girando a la derecha, por la línea amarilla. Revisá ese recorrido y levantá el FOD. Son dos objetos.');
   interactivos = fods.map(f => ({ obj: f, alTocar: it => { f.visible = false; audio.ok(); interactivos = interactivos.filter(x => x !== it); const q = fods.filter(x => x.visible).length; decir(q ? `Bien. Quedan ${q}.` : 'Recorrido limpio. Tirá lo que juntaste en el tacho de FOD.'); } }));
   await esperarQue(() => fods.every(f => !f.visible)); await tirarEnTacho(); estado.fod = true; lista();
   decir('Ahora retirá los conos del diamante: tocá cada uno.');
@@ -538,8 +550,7 @@ function irA(nombre) { cerrarPausa(false); esperada = null; alResolver = null; p
 
 // ---------- menú de pausa: continuar, reiniciar, ir a la práctica, inicio, salir (botón «Menú»; en Quest, botón B/Y)
 let pausado = false;
-const OPC_PAUSA = [{ id: 'continuar', texto: 'Continuar' }, { id: 'reiniciarFase', texto: 'Reiniciar esta parte' }, { id: 'practica', texto: 'Ir a la práctica' },
-  { id: 'inicio', texto: 'Reiniciar el juego' }, { id: 'salir', texto: 'Salir del juego' }];
+const OPC_PAUSA = [{ id: 'continuar', texto: 'Continuar' }, { id: 'reiniciarFase', texto: 'Reiniciar esta parte' },   { id: 'inicio', texto: 'Reiniciar el juego' }, { id: 'salir', texto: 'Salir del juego' }];
 function abrirPausa() {
   if (pausado || $('salida').hidden === false) return; pausado = true; if ('speechSynthesis' in window) speechSynthesis.pause();
   const elegir = id => { cerrarPausa(id === 'continuar');
@@ -614,5 +625,5 @@ renderer.setAnimationLoop(() => {
     renderer.setViewport(x, y, w, h); renderer.setScissor(x, y, w, h); renderer.setScissorTest(true); renderer.autoClear = false; { const cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha(); renderer.setClearColor(0xdfe8ee, 1); renderer.clear(true, true); renderer.setClearColor(cc, ca); } renderer.render(escenaPrev, camPrev); renderer.autoClear = true; renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight); }
 });
 addEventListener('resize', () => { camara.aspect = innerWidth / innerHeight; camara.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
-window.__senales = { tachos, constancia, abrirPausa, get pausado() { return pausado; }, set vel(v) { velJuego = v; }, get esperada() { return esperada; }, A, avion, senalero, tutor, irA, sena: id => senaDelAlumno(id), get fase() { return faseActual; }, fods: () => fods, conos, fantasmas, teletransportar, rig, camara, epp, mesaEPP, tocarObj: o => { const it = interactivos.find(i => i.obj === o); if (it) it.alTocar(it); }, interactivos: () => interactivos, errores: () => errores, POS_SENALERO, detector, RES, panel: id => { const b = [...document.querySelectorAll('#panel-botones button')].find(x => x.textContent.includes(id)); b?.click(); } };
+window.__senales = { hiluxPos: () => hilux.position, tachos, constancia, abrirPausa, get pausado() { return pausado; }, set vel(v) { velJuego = v; }, get esperada() { return esperada; }, A, avion, senalero, tutor, irA, sena: id => senaDelAlumno(id), get fase() { return faseActual; }, fods: () => fods, conos, fantasmas, teletransportar, rig, camara, epp, mesaEPP, tocarObj: o => { const it = interactivos.find(i => i.obj === o); if (it) it.alTocar(it); }, interactivos: () => interactivos, errores: () => errores, POS_SENALERO, detector, RES, panel: id => { const b = [...document.querySelectorAll('#panel-botones button')].find(x => x.textContent.includes(id)); b?.click(); } };
 correr('intro');
