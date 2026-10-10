@@ -6,7 +6,7 @@
 // posición, calzas, diamante, FOD, EPP) sigue OACI / lo indicado por Iván y queda «a validar» con AAXOD.
 import * as THREE from './three.module.js';
 import { GLTFLoader } from './GLTFLoader.js?v=20261008a';
-import { crearEscenario } from './escenario.js?v=20261008a';
+import { crearEscenario } from './escenario.js?v=20261010b';
 import { crearAT802GLB } from './at802glb.js?v=20261008a';
 import { crearSenaleroGLB, crearSenalero, SENAS, ORDEN_CURSO } from './senalero.js?v=20261008b';
 import { crearPlataforma, colocarCarteles, crearTachoFOD, crearCartel, estacionarAviones, crearCono, crearCalza, crearFOD, crearEPP, crearPaleta,

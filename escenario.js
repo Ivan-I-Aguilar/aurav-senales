@@ -165,8 +165,8 @@ export function crearEscenario(escena) {
   // Autobomba (Tripo, texto a 3D, 28/9) estacionada al costado del hangar 01, mirando a la plataforma
   new GLTFLoader().load('./autobomba.glb', gltf => { const m = gltf.scene; m.position.set(-27, 0, -4); m.rotation.y = Math.PI / 2 + 0.35; m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); m.name = 'autobomba'; escena.add(m); }, undefined, e => console.warn('autobomba.glb no cargó', e));
   // manga de viento
-  { const palo = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 8, 12), mats.white); palo.position.set(14, 4, 7); escena.add(palo);
-    const sock = new THREE.Group(); sock.position.set(14, 8, 7); sock.rotation.z = -Math.PI / 2.5;
+  { const palo = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 8, 12), mats.white); palo.position.set(44, 4, -20); escena.add(palo);
+    const sock = new THREE.Group(); sock.position.set(44, 8, -20); sock.rotation.z = -Math.PI / 2.5;
     for (let i = 0; i < 5; i++) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.35 - i * 0.04, 0.39 - i * 0.04, 0.4, 12, 1, true), M(i % 2 ? '#eee6cb' : '#d78955', { side: THREE.DoubleSide })); m.position.y = i * 0.4; sock.add(m); } escena.add(sock); }
   // cartel AURAV en el borde de la plataforma (fuera del sector de carga)
   { const b = marca(3); b.position.set(-16, 1.8, -12); b.rotation.y = 0.8; escena.add(b); box(0.09, 1.6, 0.09, -16, 0.8, -12, mats.dark); }
